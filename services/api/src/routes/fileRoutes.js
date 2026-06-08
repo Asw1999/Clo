@@ -82,6 +82,40 @@ router.get('/files/:id/download', async (req, res, next) => {
 	}
 });
 
+router.get('/files/:id/preview', async (req, res, next) => {
+	try {
+		const context = getFileContext(req.params.id);
+		if (!ensureFileContext(context, res)) {
+			return;
+		}
+
+		if (context.file.is_folder) {
+			return res.status(400).json({ error: 'Folder preview is not supported' });
+		}
+
+		const mimeType = context.file.mime_type || 'application/octet-stream';
+		const isPreviewable = /^(image|video|audio|text)\//.test(mimeType)
+			|| mimeType === 'application/pdf'
+			|| mimeType === 'application/json';
+
+		if (!isPreviewable) {
+			return res.status(415).json({ error: 'Preview is not supported for this file type' });
+		}
+
+		const stream = await context.adapter.getDownloadStream(context.file);
+
+		res.setHeader('Content-Disposition', `inline; filename="${context.file.file_name}"`);
+		res.setHeader('Content-Type', mimeType);
+		if (context.file.size) {
+			res.setHeader('Content-Length', String(context.file.size));
+		}
+
+		stream.pipe(res);
+	} catch (error) {
+		next(error);
+	}
+});
+
 router.patch('/files/:id/rename', async (req, res, next) => {
 	try {
 		const { name } = req.body;

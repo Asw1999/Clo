@@ -18,7 +18,6 @@ const accountStore = useAccountManagementStore();
 const { files, isLoading } = storeToRefs(fileTreeStore);
 const { accounts } = storeToRefs(accountStore);
 
-const connectingProvider = ref('');
 const connectError = ref('');
 
 const quickFiles = computed(() => files.value.filter((file) => !file.is_folder).slice(0, 6));
@@ -50,32 +49,6 @@ function formatDate(value) {
 		month: 'short',
 		year: 'numeric',
 	}).format(new Date(value));
-}
-
-async function connectGoogleDrive() {
-	connectingProvider.value = 'google_drive';
-	connectError.value = '';
-	try {
-		const { data } = await api.getGoogleConnectUrl();
-		window.location.href = data.authorizationUrl;
-	} catch (error) {
-		connectError.value = error.message;
-	} finally {
-		connectingProvider.value = '';
-	}
-}
-
-async function connectOneDrive() {
-	connectingProvider.value = 'onedrive';
-	connectError.value = '';
-	try {
-		const { data } = await api.getOneDriveConnectUrl();
-		window.location.href = data.authorizationUrl;
-	} catch (error) {
-		connectError.value = error.message;
-	} finally {
-		connectingProvider.value = '';
-	}
 }
 
 async function loadPage() {
@@ -110,13 +83,7 @@ onMounted(loadPage);
 					</p>
 
 					<div class="mt-[18px] flex flex-wrap gap-3">
-						<button type="button" class="h-10 rounded-full border border-[#1a73e8] bg-[#1a73e8] px-[18px] text-white disabled:opacity-60" :disabled="Boolean(connectingProvider)" @click="connectGoogleDrive">
-							{{ connectingProvider === 'google_drive' ? 'Menghubungkan Google...' : 'Hubungkan Google Drive' }}
-						</button>
-						<button type="button" class="h-10 rounded-full border border-[#dadce0] bg-white px-[18px] text-[#2563eb] disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-sky-400" :disabled="Boolean(connectingProvider)" @click="connectOneDrive">
-							{{ connectingProvider === 'onedrive' ? 'Menghubungkan OneDrive...' : 'Hubungkan OneDrive' }}
-						</button>
-						<RouterLink to="/my-drive" class="inline-flex h-10 items-center rounded-full border border-[#dadce0] bg-white px-[18px] text-[#1a73e8] dark:border-slate-600 dark:bg-slate-800 dark:text-sky-400">
+						<RouterLink to="/my-drive" class="inline-flex h-10 items-center rounded-full border border-[#1a73e8] bg-[#1a73e8] px-[18px] text-white disabled:opacity-60">
 							Buka Drive Saya
 						</RouterLink>
 						<RouterLink to="/quota" class="inline-flex h-10 items-center rounded-full border border-[#dadce0] bg-white px-[18px] text-[#1a73e8] dark:border-slate-600 dark:bg-slate-800 dark:text-sky-400">

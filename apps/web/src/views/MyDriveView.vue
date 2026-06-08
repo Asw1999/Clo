@@ -3,15 +3,27 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import {
 	IconChevronRight,
+	IconChevronDown,
+	IconChevronUp,
+	IconCheck,
 	IconEdit,
 	IconEye,
 	IconDownload,
 	IconFileDescription,
+	IconFileText,
+	IconFileTypePdf,
+	IconFileZip,
 	IconFolder,
+	IconPhoto,
+	IconMusic,
+	IconPlayerPlay,
 	IconTrash,
+	IconVideo,
 	IconInfoCircle,
 	IconLayoutGrid,
-	IconListDetails,
+	IconList,
+	IconSearch,
+	IconX,
 } from '@tabler/icons-vue';
 import DriveShell from '../components/DriveShell.vue';
 import FloatingProgressToast from '../components/FloatingProgressToast.vue';
@@ -33,10 +45,100 @@ const contextMenu = ref({ visible: false, x: 0, y: 0, file: null });
 const detailsFile = ref(null);
 const isDetailsOpen = ref(false);
 const isActionRunning = ref(false);
+const previewFile = ref(null);
+const isPreviewOpen = ref(false);
+const isPreviewLoading = ref(false);
+const isGridView = ref(false);
+const activeFilterMenu = ref(null);
+const selectedTypeFilter = ref('all');
+const selectedOwnerFilter = ref('all');
+const selectedUpdatedFilter = ref('all');
 const lastObservedSyncAt = ref('');
 let healthPollTimer = null;
 
+const sortBy = ref('updated_at');
+const sortDirection = ref('desc');
+
 const folders = computed(() => filteredFiles.value.filter((file) => file.is_folder));
+
+const suggestedFolders = computed(() => folders.value.slice(0, 4));
+
+const ownerOptions = computed(() => {
+	const owners = [...new Set(filteredFiles.value.map((file) => file.email).filter(Boolean))];
+	return owners.sort((left, right) => left.localeCompare(right, 'id'));
+});
+
+const typeOptions = [
+	{ value: 'all', label: 'Semua jenis' },
+	{ value: 'folder', label: 'Folder' },
+	{ value: 'document', label: 'Dokumen' },
+	{ value: 'image', label: 'Gambar' },
+	{ value: 'pdf', label: 'PDF' },
+	{ value: 'video', label: 'Video' },
+	{ value: 'audio', label: 'Audio' },
+	{ value: 'archive', label: 'Arsip' },
+];
+
+const updatedOptions = [
+	{ value: 'all', label: 'Semua waktu' },
+	{ value: 'today', label: 'Hari ini' },
+	{ value: 'last7', label: '7 hari terakhir' },
+	{ value: 'last30', label: '30 hari terakhir' },
+	{ value: 'thisYear', label: 'Tahun ini' },
+	{ value: 'lastYear', label: 'Tahun lalu' },
+];
+
+const visibleFiles = computed(() => {
+	return filteredFiles.value.filter((file) => {
+		const typeMatches = selectedTypeFilter.value === 'all' || getFileCategory(file) === selectedTypeFilter.value;
+		const ownerMatches = selectedOwnerFilter.value === 'all' || file.email === selectedOwnerFilter.value;
+		const updatedMatches = selectedUpdatedFilter.value === 'all' || matchesUpdatedFilter(file.updated_at, selectedUpdatedFilter.value);
+		return typeMatches && ownerMatches && updatedMatches;
+	});
+});
+
+const sortedFiles = computed(() => {
+	const items = [...visibleFiles.value];
+	const direction = sortDirection.value === 'asc' ? 1 : -1;
+
+	return items.sort((left, right) => {
+		if (left.is_folder !== right.is_folder) {
+			return left.is_folder ? -1 : 1;
+		}
+
+		let leftValue;
+		let rightValue;
+
+		switch (sortBy.value) {
+			case 'file_name':
+				leftValue = (left.display_name || left.file_name || '').toLowerCase();
+				rightValue = (right.display_name || right.file_name || '').toLowerCase();
+				break;
+			case 'email':
+				leftValue = (left.email || '').toLowerCase();
+				rightValue = (right.email || '').toLowerCase();
+				break;
+			case 'size':
+				leftValue = Number(left.size || 0);
+				rightValue = Number(right.size || 0);
+				break;
+			case 'updated_at':
+			default:
+				leftValue = new Date(left.updated_at || 0).getTime();
+				rightValue = new Date(right.updated_at || 0).getTime();
+				break;
+		}
+
+		if (leftValue < rightValue) return -1 * direction;
+		if (leftValue > rightValue) return 1 * direction;
+
+		const leftName = (left.display_name || left.file_name || '').toLowerCase();
+		const rightName = (right.display_name || right.file_name || '').toLowerCase();
+		if (leftName < rightName) return -1;
+		if (leftName > rightName) return 1;
+		return 0;
+	});
+});
 
 function formatBytes(value) {
 	if (!value) return '—';
@@ -59,6 +161,155 @@ function formatDate(value) {
 	}).format(new Date(value));
 }
 
+function getFileExtension(file) {
+	const source = file.display_name || file.file_name || '';
+	const parts = source.toLowerCase().split('.');
+	return parts.length > 1 ? parts.at(-1) : '';
+}
+
+function getFileCategory(file) {
+	if (file.is_folder) return 'folder';
+	const mimeType = (file.mime_type || file.mimeType || '').toLowerCase();
+	const extension = getFileExtension(file);
+
+	if (mimeType === 'application/pdf' || extension === 'pdf') return 'pdf';
+	if (mimeType.startsWith('image/')) return 'image';
+	if (mimeType.startsWith('video/')) return 'video';
+	if (mimeType.startsWith('audio/')) return 'audio';
+	if (
+		mimeType.includes('zip') ||
+		mimeType.includes('rar') ||
+		mimeType.includes('7z') ||
+		mimeType.includes('tar') ||
+		['zip', 'rar', '7z', 'tar', 'gz'].includes(extension)
+	) {
+		return 'archive';
+	}
+	if (
+		mimeType.startsWith('text/') ||
+		mimeType.includes('document') ||
+		mimeType.includes('word') ||
+		mimeType.includes('sheet') ||
+		mimeType.includes('excel') ||
+		mimeType.includes('presentation') ||
+		mimeType.includes('powerpoint') ||
+		mimeType === 'application/json'
+	) {
+		return 'document';
+	}
+
+	return 'document';
+}
+
+function getFileIcon(file) {
+	if (file.is_folder) return IconFolder;
+
+	switch (getFileCategory(file)) {
+		case 'image':
+			return IconPhoto;
+		case 'pdf':
+			return IconFileTypePdf;
+		case 'video':
+			return IconVideo;
+		case 'audio':
+			return IconMusic;
+		case 'archive':
+			return IconFileZip;
+		case 'document':
+		default:
+			return IconFileText;
+	}
+}
+
+function getTypeFilterIcon(value) {
+	switch (value) {
+		case 'folder':
+			return IconFolder;
+		case 'image':
+			return IconPhoto;
+		case 'pdf':
+			return IconFileTypePdf;
+		case 'video':
+			return IconVideo;
+		case 'audio':
+			return IconMusic;
+		case 'archive':
+			return IconFileZip;
+		case 'document':
+			return IconFileText;
+		case 'all':
+		default:
+			return IconFileDescription;
+	}
+}
+
+function getFilterLabel(type, value) {
+	if (type === 'type') return typeOptions.find((option) => option.value === value)?.label || 'Jenis';
+	if (type === 'updated') return updatedOptions.find((option) => option.value === value)?.label || 'Diubah';
+	return value;
+}
+
+function matchesUpdatedFilter(value, filter) {
+	if (!value) return false;
+	const fileDate = new Date(value);
+	const now = new Date();
+	const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+	const last7Start = new Date(todayStart);
+	last7Start.setDate(last7Start.getDate() - 6);
+	const last30Start = new Date(todayStart);
+	last30Start.setDate(last30Start.getDate() - 29);
+	const thisYearStart = new Date(now.getFullYear(), 0, 1);
+	const lastYearStart = new Date(now.getFullYear() - 1, 0, 1);
+	const lastYearEnd = new Date(now.getFullYear(), 0, 1);
+
+	switch (filter) {
+		case 'today':
+			return fileDate >= todayStart;
+		case 'last7':
+			return fileDate >= last7Start;
+		case 'last30':
+			return fileDate >= last30Start;
+		case 'thisYear':
+			return fileDate >= thisYearStart;
+		case 'lastYear':
+			return fileDate >= lastYearStart && fileDate < lastYearEnd;
+		default:
+			return true;
+	}
+}
+
+function toggleFilterMenu(menu) {
+	activeFilterMenu.value = activeFilterMenu.value === menu ? null : menu;
+}
+
+function applyFilter(type, value) {
+	if (type === 'type') selectedTypeFilter.value = value;
+	if (type === 'owner') selectedOwnerFilter.value = value;
+	if (type === 'updated') selectedUpdatedFilter.value = value;
+	activeFilterMenu.value = null;
+}
+
+function clearFilter(type) {
+	if (type === 'type') selectedTypeFilter.value = 'all';
+	if (type === 'owner') selectedOwnerFilter.value = 'all';
+	if (type === 'updated') selectedUpdatedFilter.value = 'all';
+}
+
+function isFilterActive(type) {
+	if (type === 'type') return selectedTypeFilter.value !== 'all';
+	if (type === 'owner') return selectedOwnerFilter.value !== 'all';
+	if (type === 'updated') return selectedUpdatedFilter.value !== 'all';
+	return false;
+}
+
+function toggleViewMode(mode) {
+	isGridView.value = mode === 'grid';
+}
+
+function renderOwnerLabel(value) {
+	return value === 'all' ? 'Semua orang' : value;
+}
+
 function openFolder(file) {
 	if (!file.is_folder) return;
 	const nextPath = `${currentPath.value === '/' ? '' : currentPath.value}${file.file_name}/`;
@@ -71,6 +322,7 @@ function closeContextMenu() {
 
 function openContextMenu(event, file) {
 	event.preventDefault();
+	event.stopPropagation();
 	contextMenu.value = {
 		visible: true,
 		x: event.clientX,
@@ -79,9 +331,22 @@ function openContextMenu(event, file) {
 	};
 }
 
+function openSelectedItem() {
+	const file = contextMenu.value.file;
+	closeContextMenu();
+	if (!file?.is_folder) return;
+	openFolder(file);
+}
+
 function closeDetails() {
 	isDetailsOpen.value = false;
 	detailsFile.value = null;
+}
+
+function closePreview() {
+	isPreviewOpen.value = false;
+	previewFile.value = null;
+	isPreviewLoading.value = false;
 }
 
 function resetFileInput(inputRef) {
@@ -316,6 +581,65 @@ async function showSelectedFileDetails() {
 	}
 }
 
+function getPreviewType(file) {
+	if (!file || file.is_folder) return null;
+	const mimeType = file.mime_type || file.mimeType || '';
+
+	if (mimeType.startsWith('image/')) return 'image';
+	if (mimeType.startsWith('video/')) return 'video';
+	if (mimeType.startsWith('audio/')) return 'audio';
+	if (mimeType === 'application/pdf') return 'pdf';
+	if (mimeType.startsWith('text/') || mimeType === 'application/json') return 'document';
+
+	return null;
+}
+
+function canPreviewFile(file) {
+	return Boolean(getPreviewType(file));
+}
+
+async function openPreview(file = contextMenu.value.file) {
+	if (!canPreviewFile(file)) {
+		closeContextMenu();
+		actionError.value = 'Preview belum didukung untuk tipe file ini.';
+		return;
+	}
+
+	closeContextMenu();
+	actionError.value = '';
+	isPreviewLoading.value = true;
+	previewFile.value = {
+		...file,
+		previewType: getPreviewType(file),
+		previewUrl: api.previewUrl(file.id),
+	};
+	isPreviewOpen.value = true;
+}
+
+function handlePreviewLoaded() {
+	isPreviewLoading.value = false;
+}
+
+function handlePreviewFailed() {
+	isPreviewLoading.value = false;
+	actionError.value = 'Preview gagal dimuat. Beberapa file provider memang tidak kompatibel untuk preview ringan.';
+}
+
+function toggleSort(field) {
+	if (sortBy.value === field) {
+		sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
+		return;
+	}
+
+	sortBy.value = field;
+	sortDirection.value = field === 'file_name' || field === 'email' ? 'asc' : 'desc';
+}
+
+function sortIndicator(field) {
+	if (sortBy.value !== field) return null;
+	return sortDirection.value === 'asc' ? IconChevronUp : IconChevronDown;
+}
+
 function triggerDownload(file) {
 	closeContextMenu();
 	if (file?.is_folder) return;
@@ -323,6 +647,7 @@ function triggerDownload(file) {
 }
 
 function handleGlobalPointer() {
+	activeFilterMenu.value = null;
 	if (contextMenu.value.visible) {
 		closeContextMenu();
 	}
@@ -366,13 +691,20 @@ onBeforeUnmount(() => {
 			</div>
 
 			<div class="mb-2 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-				<h1 class="m-0 text-2xl font-normal text-[#202124] dark:text-slate-100">Drive Saya</h1>
+				<nav aria-label="Breadcrumb" class="m-0 flex flex-wrap items-center gap-1 text-2xl font-normal text-[#202124] dark:text-slate-100">
+					<template v-for="(crumb, index) in breadcrumbs" :key="crumb.path">
+						<button type="button" class="max-w-[220px] truncate rounded-xl px-2 py-1 leading-tight transition hover:bg-[#f1f3f4] hover:text-[#1a73e8] dark:hover:bg-slate-700/70 dark:hover:text-sky-300" @click="fileTreeStore.navigate(crumb.path)">
+							{{ crumb.label === 'Root' ? 'Drive Saya' : crumb.label }}
+						</button>
+						<IconChevronRight v-if="index < breadcrumbs.length - 1" :size="18" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
+					</template>
+				</nav>
 
 				<div class="flex items-center gap-2">
-					<button type="button" class="grid size-9 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-400 dark:hover:bg-white/8">
-						<IconListDetails :size="18" :stroke="2" />
+					<button type="button" class="grid size-9 place-items-center rounded-full transition" :class="!isGridView ? 'bg-[#e8f0fe] text-[#1a73e8] dark:bg-sky-500/15 dark:text-sky-300' : 'text-[#5f6368] hover:bg-black/5 dark:text-slate-400 dark:hover:bg-white/8'" @click="toggleViewMode('list')">
+						<IconList :size="18" :stroke="2" />
 					</button>
-					<button type="button" class="grid size-9 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-400 dark:hover:bg-white/8">
+					<button type="button" class="grid size-9 place-items-center rounded-full transition" :class="isGridView ? 'bg-[#e8f0fe] text-[#1a73e8] dark:bg-sky-500/15 dark:text-sky-300' : 'text-[#5f6368] hover:bg-black/5 dark:text-slate-400 dark:hover:bg-white/8'" @click="toggleViewMode('grid')">
 						<IconLayoutGrid :size="18" :stroke="2" />
 					</button>
 					<button type="button" class="grid size-9 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-400 dark:hover:bg-white/8">
@@ -381,91 +713,167 @@ onBeforeUnmount(() => {
 				</div>
 			</div>
 
-			<div class="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-				<nav class="flex flex-wrap items-center gap-1.5">
-					<button v-for="(crumb, index) in breadcrumbs" :key="crumb.path" type="button" class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[#202124] hover:bg-black/[0.03] dark:text-slate-100 dark:hover:bg-white/8" @click="fileTreeStore.navigate(crumb.path)">
-						<span>{{ crumb.label === 'Root' ? 'Drive Saya' : crumb.label }}</span>
-						<IconChevronRight v-if="index < breadcrumbs.length - 1" :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
-					</button>
-				</nav>
+			<div class="mb-4 flex flex-wrap items-center justify-end gap-2.5">
+					<div class="relative">
+						<button type="button" class="inline-flex items-center gap-2 rounded-2xl border border-[#e0e3e7] bg-[#f8fafd] px-3.5 py-2 text-sm font-medium text-[#3c4043] transition hover:border-[#c7d2e0] hover:bg-white dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:bg-slate-800" @click.stop="toggleFilterMenu('type')">
+							<span>{{ getFilterLabel('type', selectedTypeFilter) }}</span>
+							<IconX v-if="isFilterActive('type')" :size="16" :stroke="2" class="text-[#5f6368] transition hover:text-[#1a73e8] dark:text-slate-400 dark:hover:text-sky-300" @click.stop="clearFilter('type')" />
+							<IconChevronDown v-else :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
+						</button>
+						<div v-if="activeFilterMenu === 'type'" class="absolute right-0 top-full z-30 mt-2 min-w-[220px] overflow-hidden rounded-2xl border border-[#e0e3e7] bg-white p-2 shadow-[0_16px_40px_rgba(32,33,36,0.16)] dark:border-slate-700 dark:bg-slate-800">
+							<button v-for="option in typeOptions" :key="option.value" type="button" class="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="applyFilter('type', option.value)">
+								<span class="flex items-center gap-2">
+									<component :is="getTypeFilterIcon(option.value)" :size="16" :stroke="1.8" class="text-[#5f6368] dark:text-slate-400" />
+									<span>{{ option.label }}</span>
+								</span>
+								<IconCheck v-if="selectedTypeFilter === option.value" :size="16" :stroke="2" class="text-[#1a73e8] dark:text-sky-300" />
+							</button>
+						</div>
+					</div>
+					<div class="relative">
+						<button type="button" class="inline-flex items-center gap-2 rounded-2xl border border-[#e0e3e7] bg-[#f8fafd] px-3.5 py-2 text-sm font-medium text-[#3c4043] transition hover:border-[#c7d2e0] hover:bg-white dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:bg-slate-800" @click.stop="toggleFilterMenu('owner')">
+							<span>{{ renderOwnerLabel(selectedOwnerFilter) }}</span>
+							<IconX v-if="isFilterActive('owner')" :size="16" :stroke="2" class="text-[#5f6368] transition hover:text-[#1a73e8] dark:text-slate-400 dark:hover:text-sky-300" @click.stop="clearFilter('owner')" />
+							<IconChevronDown v-else :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
+						</button>
+						<div v-if="activeFilterMenu === 'owner'" class="absolute right-0 top-full z-30 mt-2 min-w-[260px] overflow-hidden rounded-2xl border border-[#e0e3e7] bg-white p-2 shadow-[0_16px_40px_rgba(32,33,36,0.16)] dark:border-slate-700 dark:bg-slate-800">
+							<button type="button" class="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="applyFilter('owner', 'all')">
+								<span>Semua orang</span>
+								<IconCheck v-if="selectedOwnerFilter === 'all'" :size="16" :stroke="2" class="text-[#1a73e8] dark:text-sky-300" />
+							</button>
+							<button v-for="owner in ownerOptions" :key="owner" type="button" class="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="applyFilter('owner', owner)">
+								<span class="truncate">{{ owner }}</span>
+								<IconCheck v-if="selectedOwnerFilter === owner" :size="16" :stroke="2" class="text-[#1a73e8] dark:text-sky-300" />
+							</button>
+						</div>
+					</div>
+					<div class="relative">
+						<button type="button" class="inline-flex items-center gap-2 rounded-2xl border border-[#e0e3e7] bg-[#f8fafd] px-3.5 py-2 text-sm font-medium text-[#3c4043] transition hover:border-[#c7d2e0] hover:bg-white dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:bg-slate-800" @click.stop="toggleFilterMenu('updated')">
+							<span>{{ getFilterLabel('updated', selectedUpdatedFilter) }}</span>
+							<IconX v-if="isFilterActive('updated')" :size="16" :stroke="2" class="text-[#5f6368] transition hover:text-[#1a73e8] dark:text-slate-400 dark:hover:text-sky-300" @click.stop="clearFilter('updated')" />
+							<IconChevronDown v-else :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
+						</button>
+						<div v-if="activeFilterMenu === 'updated'" class="absolute right-0 top-full z-30 mt-2 min-w-[240px] overflow-hidden rounded-2xl border border-[#e0e3e7] bg-white p-2 shadow-[0_16px_40px_rgba(32,33,36,0.16)] dark:border-slate-700 dark:bg-slate-800">
+							<button v-for="option in updatedOptions" :key="option.value" type="button" class="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="applyFilter('updated', option.value)">
+								<span>{{ option.label }}</span>
+								<IconCheck v-if="selectedUpdatedFilter === option.value" :size="16" :stroke="2" class="text-[#1a73e8] dark:text-sky-300" />
+							</button>
+						</div>
+					</div>
+			</div>
 
-				<div class="flex flex-wrap gap-2.5">
-					<button type="button" class="rounded-full border border-[#dadce0] bg-white px-3.5 py-2 text-[#1a73e8] dark:border-slate-600 dark:bg-slate-800 dark:text-sky-400">Jenis</button>
-					<button type="button" class="rounded-full border border-[#dadce0] bg-white px-3.5 py-2 text-[#1a73e8] dark:border-slate-600 dark:bg-slate-800 dark:text-sky-400">Orang</button>
-					<button type="button" class="rounded-full border border-[#dadce0] bg-white px-3.5 py-2 text-[#1a73e8] dark:border-slate-600 dark:bg-slate-800 dark:text-sky-400">Diubah</button>
+			<div v-if="suggestedFolders.length" class="mb-[18px]">
+				<div class="mb-3 flex items-center justify-between gap-3">
+					<h2 class="m-0 text-base font-medium text-[#202124] dark:text-slate-100">Saran</h2>
 				</div>
-			</div>
 
-			<div class="mb-3 flex items-center justify-between gap-3">
-				<h2 class="m-0 text-base font-medium text-[#202124] dark:text-slate-100">Saran</h2>
-			</div>
-
-			<div class="mb-[18px] grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-				<button v-for="folder in folders.slice(0, 4)" :key="folder.id" type="button" class="flex h-12 items-center gap-2.5 rounded-full border border-[#e0e3e7] bg-white px-3.5 text-left text-[#202124] hover:bg-black/[0.02] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-white/8" @click="openFolder(folder)" @dblclick="openFolder(folder)">
-					<IconFolder :size="18" :stroke="1.8" class="text-[#1a73e8]" />
-					<span class="truncate">{{ folder.display_name || folder.file_name }}</span>
-				</button>
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+					<button v-for="folder in suggestedFolders" :key="folder.id" type="button" class="flex h-14 items-center gap-3 rounded-2xl border border-[#e0e3e7] bg-white px-4 text-left text-[#202124] transition hover:bg-black/[0.02] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-white/8" @click="openFolder(folder)" @dblclick="openFolder(folder)">
+						<IconFolder :size="18" :stroke="1.8" class="text-[#5f6368] dark:text-slate-400" />
+						<span class="truncate">{{ folder.display_name || folder.file_name }}</span>
+					</button>
+				</div>
 			</div>
 
 			<div class="mb-3 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
 				<h2 class="m-0 text-base font-medium text-[#202124] dark:text-slate-100">File</h2>
-				<input class="h-9 w-full rounded-full border border-[#dadce0] bg-white px-3.5 outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 sm:w-[220px]" type="search" :value="searchTerm" placeholder="Telusuri di folder ini" @input="fileTreeStore.applySearch($event.target.value)" />
+				<div class="relative w-full sm:w-[280px]">
+					<IconSearch :size="18" :stroke="2" class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#5f6368] dark:text-slate-400" />
+					<input class="h-11 w-full rounded-full border border-[#dadce0] bg-white pl-11 pr-4 text-sm text-[#202124] outline-none transition focus:border-[#1a73e8] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-sky-400" type="search" :value="searchTerm" placeholder="Telusuri folder ini" @input="fileTreeStore.applySearch($event.target.value)" />
+				</div>
 			</div>
 
 			<p v-if="actionError" class="mb-4 rounded-2xl bg-[#fce8e6] px-4 py-3 text-sm text-[#c5221f] dark:bg-red-950/40 dark:text-red-300">{{ actionError }}</p>
 
-			<div class="overflow-hidden rounded-2xl border border-[#e0e3e7] dark:border-slate-700">
-				<div class="grid min-h-11 grid-cols-[minmax(220px,2fr)_1.1fr_1fr_140px_84px] items-center gap-3 bg-[#f8fafd] px-[18px] text-[13px] text-[#5f6368] dark:bg-slate-900/70 dark:text-slate-400 max-lg:grid-cols-[minmax(180px,1.8fr)_1fr_1fr]">
-					<span>Nama</span>
-					<span>Pemilik</span>
-					<span>Terakhir diubah</span>
-					<span class="max-lg:hidden">Ukuran file</span>
-					<span class="max-lg:hidden"></span>
+			<div v-if="!isGridView" class="overflow-hidden rounded-2xl border border-[#e0e3e7] dark:border-slate-700">
+				<div class="grid min-h-11 grid-cols-[minmax(220px,2fr)_1.1fr_1fr_140px] items-center gap-3 bg-[#f8fafd] px-[18px] text-[13px] text-[#5f6368] dark:bg-slate-900/70 dark:text-slate-400 max-lg:grid-cols-[minmax(180px,1.8fr)_1fr_1fr]">
+					<button type="button" class="flex items-center gap-1 text-left hover:text-[#1a73e8]" @click="toggleSort('file_name')">
+						<span>Nama</span>
+						<component :is="sortIndicator('file_name')" v-if="sortIndicator('file_name')" :size="14" :stroke="2" />
+					</button>
+					<button type="button" class="flex items-center gap-1 text-left hover:text-[#1a73e8]" @click="toggleSort('email')">
+						<span>Pemilik</span>
+						<component :is="sortIndicator('email')" v-if="sortIndicator('email')" :size="14" :stroke="2" />
+					</button>
+					<button type="button" class="flex items-center gap-1 text-left hover:text-[#1a73e8]" @click="toggleSort('updated_at')">
+						<span>Terakhir diubah</span>
+						<component :is="sortIndicator('updated_at')" v-if="sortIndicator('updated_at')" :size="14" :stroke="2" />
+					</button>
+					<button type="button" class="hidden items-center gap-1 text-left hover:text-[#1a73e8] max-lg:hidden" @click="toggleSort('size')">
+						<span>Ukuran file</span>
+						<component :is="sortIndicator('size')" v-if="sortIndicator('size')" :size="14" :stroke="2" />
+					</button>
 				</div>
 
-				<div v-for="item in filteredFiles" :key="item.id" class="grid min-h-[52px] grid-cols-[minmax(220px,2fr)_1.1fr_1fr_140px_84px] items-center gap-3 border-t border-[#eceff1] px-[18px] dark:border-slate-700 max-lg:grid-cols-[minmax(180px,1.8fr)_1fr_1fr]" :class="item.is_folder ? 'cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/6' : 'hover:bg-black/[0.02] dark:hover:bg-white/6'" @dblclick="openFolder(item)" @contextmenu="openContextMenu($event, item)">
+				<div v-for="item in sortedFiles" :key="item.id" class="grid min-h-[52px] grid-cols-[minmax(220px,2fr)_1.1fr_1fr_140px] items-center gap-3 border-t border-[#eceff1] px-[18px] dark:border-slate-700 max-lg:grid-cols-[minmax(180px,1.8fr)_1fr_1fr]" :class="item.is_folder ? 'cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/6' : 'hover:bg-black/[0.02] dark:hover:bg-white/6'" @dblclick="openFolder(item)" @contextmenu="openContextMenu($event, item)">
 					<div class="flex items-center gap-2.5 text-[#202124] dark:text-slate-100">
-						<component :is="item.is_folder ? IconFolder : IconFileDescription" :size="18" :stroke="1.8" class="text-[#5f6368] dark:text-slate-400" />
+						<component :is="getFileIcon(item)" :size="18" :stroke="1.8" class="text-[#5f6368] dark:text-slate-400" />
 						<span class="truncate">{{ item.display_name || item.file_name }}</span>
 					</div>
 					<span class="text-[#5f6368] dark:text-slate-400">{{ item.email }}</span>
 					<span class="text-[#5f6368] dark:text-slate-400">{{ formatDate(item.updated_at) }}</span>
 					<span class="text-[#5f6368] dark:text-slate-400 max-lg:hidden">{{ item.is_folder ? '—' : formatBytes(item.size) }}</span>
-					<button v-if="!item.is_folder" type="button" class="justify-self-end text-[#1a73e8] max-lg:hidden" @click="triggerDownload(item)">
-						<IconDownload :size="18" :stroke="2" />
-					</button>
 				</div>
 
-				<div v-if="!filteredFiles.length && !isLoading" class="p-[18px] text-[#5f6368] dark:text-slate-400">Tidak ada file pada lokasi ini.</div>
+				<div v-if="!sortedFiles.length && !isLoading" class="p-[18px] text-[#5f6368] dark:text-slate-400">Tidak ada file pada lokasi ini.</div>
 				<div v-if="isLoading" class="p-[18px] text-[#5f6368] dark:text-slate-400">Memuat metadata mirror...</div>
 			</div>
 
-			<div v-if="contextMenu.visible" class="fixed inset-0 z-40">
-				<div class="absolute z-50 min-w-[220px] overflow-hidden rounded-2xl border border-[#e0e3e7] bg-white py-2 shadow-[0_16px_40px_rgba(32,33,36,0.2)] dark:border-slate-700 dark:bg-slate-800 dark:shadow-[0_16px_40px_rgba(15,23,42,0.45)]" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop>
-					<button type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-100 dark:hover:bg-slate-700/70" :disabled="contextMenu.file?.is_folder" @click="triggerDownload(contextMenu.file)">
-						<IconDownload :size="17" :stroke="2" />
-						<span>Download</span>
-					</button>
-					<button type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="renameSelectedFile">
-						<IconEdit :size="17" :stroke="2" />
-						<span>Ganti Nama</span>
-					</button>
-					<button type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="showSelectedFileDetails">
-						<IconEye :size="17" :stroke="2" />
-						<span>Detail File</span>
-					</button>
-					<button type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#c5221f] hover:bg-[#fce8e6] dark:text-red-300 dark:hover:bg-red-950/30" @click="deleteSelectedFile">
-						<IconTrash :size="17" :stroke="2" />
-						<span>Hapus</span>
+			<div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+				<div v-for="item in sortedFiles" :key="item.id" class="group rounded-[22px] border border-[#e0e3e7] bg-white p-4 transition hover:border-[#d2e3fc] hover:shadow-[0_10px_30px_rgba(32,33,36,0.08)] dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-500" @dblclick="openFolder(item)" @contextmenu="openContextMenu($event, item)">
+					<button type="button" class="flex w-full flex-col items-start gap-4 text-left" @click="item.is_folder ? openFolder(item) : null">
+						<div class="flex w-full items-start justify-between gap-3">
+							<div class="grid size-12 place-items-center rounded-2xl bg-[#f1f3f4] text-[#5f6368] dark:bg-slate-700 dark:text-slate-300">
+								<component :is="getFileIcon(item)" :size="22" :stroke="1.8" />
+							</div>
+						</div>
+						<div class="min-w-0">
+							<p class="truncate text-sm font-semibold text-[#202124] dark:text-slate-100">{{ item.display_name || item.file_name }}</p>
+							<p class="mt-1 truncate text-xs text-[#5f6368] dark:text-slate-400">{{ item.email || 'Tanpa pemilik' }}</p>
+						</div>
+						<div class="flex w-full items-center justify-between text-xs text-[#5f6368] dark:text-slate-400">
+							<span>{{ formatDate(item.updated_at) }}</span>
+							<span>{{ item.is_folder ? 'Folder' : formatBytes(item.size) }}</span>
+						</div>
 					</button>
 				</div>
+
+				<div v-if="!sortedFiles.length && !isLoading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">Tidak ada file pada lokasi ini.</div>
+				<div v-if="isLoading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">Memuat metadata mirror...</div>
+			</div>
+
+			<div v-if="contextMenu.visible" class="fixed z-50 min-w-[220px] overflow-hidden rounded-2xl border border-[#e0e3e7] bg-white py-2 shadow-[0_16px_40px_rgba(32,33,36,0.2)] dark:border-slate-700 dark:bg-slate-800 dark:shadow-[0_16px_40px_rgba(15,23,42,0.45)]" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop @contextmenu.stop>
+				<button v-if="contextMenu.file?.is_folder" type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="openSelectedItem">
+					<IconFolder :size="17" :stroke="2" />
+					<span>Buka</span>
+				</button>
+				<button v-if="!contextMenu.file?.is_folder" type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-100 dark:hover:bg-slate-700/70" :disabled="!canPreviewFile(contextMenu.file)" @click="openPreview(contextMenu.file)">
+					<IconEye :size="17" :stroke="2" />
+					<span>Pratinjau</span>
+				</button>
+				<button v-if="!contextMenu.file?.is_folder" type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-100 dark:hover:bg-slate-700/70" @click="triggerDownload(contextMenu.file)">
+					<IconDownload :size="17" :stroke="2" />
+					<span>Unduh</span>
+				</button>
+				<button type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="renameSelectedFile">
+					<IconEdit :size="17" :stroke="2" />
+					<span>Ganti Nama</span>
+				</button>
+				<button type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="showSelectedFileDetails">
+					<IconEye :size="17" :stroke="2" />
+					<span>{{ contextMenu.file?.is_folder ? 'Detail Folder' : 'Detail File' }}</span>
+				</button>
+				<button type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#c5221f] hover:bg-[#fce8e6] dark:text-red-300 dark:hover:bg-red-950/30" @click="deleteSelectedFile">
+					<IconTrash :size="17" :stroke="2" />
+					<span>Hapus</span>
+				</button>
 			</div>
 
 			<div v-if="isDetailsOpen && detailsFile" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4" @click="closeDetails">
 				<div class="w-full max-w-lg rounded-[28px] bg-white p-6 text-[#202124] shadow-[0_24px_60px_rgba(32,33,36,0.28)] dark:bg-slate-800 dark:text-slate-100" @click.stop>
 					<div class="flex items-start justify-between gap-4">
 						<div>
-							<h3 class="text-xl font-semibold">Detail File</h3>
+							<h3 class="text-xl font-semibold">{{ detailsFile.is_folder ? 'Detail Folder' : 'Detail File' }}</h3>
 							<p class="mt-1 text-sm text-[#5f6368] dark:text-slate-400">Metadata dari provider dan mirror lokal.</p>
 						</div>
 						<button type="button" class="rounded-full px-3 py-1 text-sm text-[#5f6368] hover:bg-black/5 dark:text-slate-400 dark:hover:bg-white/8" @click="closeDetails">Tutup</button>
@@ -491,6 +899,52 @@ onBeforeUnmount(() => {
 						<dt class="text-[#5f6368] dark:text-slate-400">Remote ID</dt>
 						<dd class="break-all">{{ detailsFile.remote_file_id || detailsFile.id }}</dd>
 					</dl>
+				</div>
+			</div>
+
+			<div v-if="isPreviewOpen && previewFile" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-8" @click="closePreview">
+				<div class="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-white text-[#202124] shadow-[0_24px_60px_rgba(32,33,36,0.28)] dark:bg-slate-900 dark:text-slate-100" @click.stop>
+					<div class="flex items-center justify-between gap-4 border-b border-[#e8eaed] px-5 py-4 dark:border-slate-800">
+						<div class="min-w-0">
+							<p class="truncate text-base font-semibold">{{ previewFile.display_name || previewFile.file_name }}</p>
+						</div>
+						<div class="flex items-center gap-2">
+							<button type="button" class="grid size-10 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-400 dark:hover:bg-white/8" @click="closePreview">
+								<IconX :size="18" :stroke="2" />
+							</button>
+						</div>
+					</div>
+
+					<div class="relative min-h-[420px] flex-1 bg-[#f8fafd] dark:bg-slate-950">
+						<div v-if="isPreviewLoading" class="absolute inset-0 z-10 grid place-items-center text-sm text-[#5f6368] dark:text-slate-400">
+							Memuat preview...
+						</div>
+
+						<img v-if="previewFile.previewType === 'image'" :src="previewFile.previewUrl" class="max-h-[75vh] w-full object-contain" alt="Preview file" @load="handlePreviewLoaded" @error="handlePreviewFailed" />
+						<video v-else-if="previewFile.previewType === 'video'" class="max-h-[75vh] w-full bg-black" controls playsinline @loadeddata="handlePreviewLoaded" @error="handlePreviewFailed">
+							<source :src="previewFile.previewUrl" :type="previewFile.mime_type || 'video/mp4'" />
+						</video>
+						<div v-else-if="previewFile.previewType === 'audio'" class="grid min-h-[420px] place-items-center px-6">
+							<div class="w-full max-w-xl rounded-[24px] border border-[#e0e3e7] bg-white p-6 text-center dark:border-slate-700 dark:bg-slate-900">
+								<div class="mx-auto grid size-16 place-items-center rounded-full bg-[#e8f0fe] text-[#1a73e8] dark:bg-slate-800">
+									<IconMusic :size="28" :stroke="1.8" />
+								</div>
+								<p class="mt-4 font-medium">{{ previewFile.display_name || previewFile.file_name }}</p>
+								<audio class="mt-5 w-full" controls @loadeddata="handlePreviewLoaded" @error="handlePreviewFailed">
+									<source :src="previewFile.previewUrl" :type="previewFile.mime_type || 'audio/mpeg'" />
+								</audio>
+							</div>
+						</div>
+						<iframe v-else-if="previewFile.previewType === 'pdf' || previewFile.previewType === 'document'" :src="previewFile.previewUrl" class="h-[75vh] w-full border-0" title="Preview dokumen" @load="handlePreviewLoaded" />
+						<div v-else class="grid min-h-[420px] place-items-center px-6 text-center text-sm text-[#5f6368] dark:text-slate-400">
+							<div>
+								<div class="mx-auto grid size-16 place-items-center rounded-full bg-[#e8f0fe] text-[#1a73e8] dark:bg-slate-800">
+									<IconPlayerPlay :size="28" :stroke="1.8" />
+								</div>
+								<p class="mt-4">Preview belum tersedia untuk tipe file ini.</p>
+							</div>
+						</div>
+					</div>
 				</div>
 			</div>
 

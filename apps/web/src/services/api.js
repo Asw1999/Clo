@@ -99,4 +99,7 @@ export const api = {
 	downloadUrl(fileId) {
 		return `${API_BASE_URL}/files/${fileId}/download`;
 	},
+	previewUrl(fileId) {
+		return `${API_BASE_URL}/files/${fileId}/preview`;
+	},
 };
