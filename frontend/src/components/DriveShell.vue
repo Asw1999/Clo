@@ -31,9 +31,11 @@ import {
 	IconLogout,
 } from '@tabler/icons-vue';
 import { useRouter } from 'vue-router';
+import logoUrl from '../assets/logo.webp';
 import { useAccountManagementStore } from '../stores/accountManagement';
 import { useSettingsStore } from '../stores/settings';
 import { useAuthStore } from '../stores/auth';
+import { useStorageStats } from '../composables/useStorageStats.js';
 import HelpModal from './HelpModal.vue';
 import ProfileModal from './ProfileModal.vue';
 import LanguageModal from './LanguageModal.vue';
@@ -59,31 +61,11 @@ const settingsStore = useSettingsStore();
 const authStore = useAuthStore();
 const { accounts } = storeToRefs(accountStore);
 const { isHosted } = storeToRefs(authStore);
+const { storagePercent, storagePercentRounded, storageLabel } = useStorageStats();
 
 async function handleLogout() {
 	await authStore.logout();
 	router.replace('/login');
-}
-
-const totalUsed = computed(() => accounts.value.reduce((sum, account) => sum + Number(account.used_space || 0), 0));
-const totalSpace = computed(() => accounts.value.reduce((sum, account) => sum + Number(account.total_space || 0), 0));
-const storagePercent = computed(() => (totalSpace.value ? Math.min(100, (totalUsed.value / totalSpace.value) * 100) : 0));
-const storageLabel = computed(() => {
-	const usedFormatted = formatBytes(totalUsed.value);
-	const totalFormatted = formatBytes(totalSpace.value);
-	return t('sidebar.storageUsed', { used: usedFormatted, total: totalFormatted });
-});
-
-function formatBytes(value) {
-	if (!value) return '0 B';
-	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-	let amount = Number(value);
-	let index = 0;
-	while (amount >= 1024 && index < units.length - 1) {
-		amount /= 1024;
-		index += 1;
-	}
-	return `${amount.toFixed(amount >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
 function toggleCreateMenu() {
@@ -211,8 +193,8 @@ const profileLinks = [
 					<IconMenu2 :size="22" :stroke="2" />
 				</button>
 				<div class="hidden items-center gap-2 lg:flex">
-					<button type="button" class="grid size-11 place-items-center rounded-2xl bg-[#1a73e8] text-white transition hover:scale-[1.03] hover:bg-[#1765cc] focus:outline-none focus:ring-4 focus:ring-[#1a73e8]/20 dark:bg-[#3b82f6] dark:text-white dark:hover:bg-[#2563eb] dark:focus:ring-blue-400/20" :aria-label="t('header.openProfile')" @click="openProfileModal">
-						<IconCloudDataConnection :size="24" :stroke="2" />
+					<button type="button" class="grid size-11 place-items-center overflow-hidden rounded-2xl bg-white transition hover:scale-[1.03] focus:outline-none focus:ring-4 focus:ring-[#1a73e8]/20 dark:bg-slate-800 dark:focus:ring-blue-400/20" :aria-label="t('header.openProfile')" @click="openProfileModal">
+						<img :src="logoUrl" alt="OmniCloud logo" class="size-full object-cover" />
 					</button>
 					<div class="text-[22px] font-medium text-[#5f6368] dark:text-slate-300">OmniCloud</div>
 				</div>
@@ -250,8 +232,8 @@ const profileLinks = [
 				<div class="max-h-[calc(100vh-16px)] overflow-y-auto rounded-[28px] border border-[#dfe6f1] bg-white/95 p-4 text-[#202124] shadow-[0_20px_60px_rgba(15,23,42,0.22)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-100">
 					<div class="mb-5 flex items-center justify-between gap-3">
 						<div class="flex items-center gap-2">
-							<span class="grid size-11 place-items-center rounded-2xl bg-[#1a73e8] text-white dark:bg-[#3b82f6] dark:text-white">
-								<IconCloudDataConnection :size="24" :stroke="2" />
+							<span class="grid size-11 place-items-center overflow-hidden rounded-2xl bg-white dark:bg-slate-800">
+								<img :src="logoUrl" alt="OmniCloud logo" class="size-full object-cover" />
 							</span>
 							<span class="text-xl font-medium text-[#5f6368] dark:text-slate-300">OmniCloud</span>
 						</div>
@@ -297,7 +279,7 @@ const profileLinks = [
 								</span>
 								<span class="text-sm font-semibold">{{ t('sidebar.storage') }}</span>
 							</div>
-							<span class="rounded-full bg-[#e8f0fe] px-2 py-1 text-xs font-semibold text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">{{ storagePercent.toFixed(0) }}%</span>
+							<span class="rounded-full bg-[#e8f0fe] px-2 py-1 text-xs font-semibold text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">{{ storagePercentRounded }}%</span>
 						</div>
 
 						<div class="mb-2 h-2 overflow-hidden rounded-full bg-[#dfe6f1] dark:bg-slate-700">
@@ -349,7 +331,7 @@ const profileLinks = [
 							</span>
 							<span class="text-sm font-semibold">{{ t('sidebar.storage') }}</span>
 						</div>
-						<span class="rounded-full bg-[#e8f0fe] px-2 py-1 text-xs font-semibold text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">{{ storagePercent.toFixed(0) }}%</span>
+						<span class="rounded-full bg-[#e8f0fe] px-2 py-1 text-xs font-semibold text-[#1a73e8] dark:bg-blue-500/15 dark:text-blue-300">{{ storagePercentRounded }}%</span>
 					</div>
 
 					<div class="mb-2 h-2 overflow-hidden rounded-full bg-[#dfe6f1] dark:bg-slate-700">

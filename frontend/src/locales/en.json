@@ -40,7 +40,7 @@
 		"cancel": "Cancel",
 		"save": "Save",
 		"delete": "Delete",
-		"edit": "Edit",
+		"rename": "Rename",
 		"download": "Download",
 		"upload": "Upload",
 		"folder": "Folder",
@@ -91,7 +91,6 @@
 		"storageUsed": "{used} of {total} used"
 	},
 	"home": {
-		"title": "Home",
 		"subtitle": "Cloud accounts",
 		"heroTitle": "Connect accounts and view all files like a Drive interface.",
 		"heroDesc": "Sync metadata from real cloud accounts and display file list in a Google Drive-like interface.",

@@ -18,13 +18,6 @@ import {
 	IconChartPie,
 	IconAdjustments,
 } from '@tabler/icons-vue';
-import dropboxLogo from '../assets/dropbox.svg';
-import googleDriveLogo from '../assets/google-drive.svg';
-import megaLogo from '../assets/mega.svg';
-import oneDriveLogo from '../assets/microsoft-onedrive.svg';
-import pcloudLogo from '../assets/pcloud.svg';
-import yandexLogo from '../assets/yandex-disk.svg';
-import s3Logo from '../assets/s3-storage.svg';
 import DriveShell from '../components/DriveShell.vue';
 import MegaConnectModal from '../components/MegaConnectModal.vue';
 import PCloudConnectModal from '../components/PCloudConnectModal.vue';
@@ -32,12 +25,15 @@ import S3ConnectModal from '../components/S3ConnectModal.vue';
 import TruncateMarquee from '../components/TruncateMarquee.vue';
 import { useAccountManagementStore } from '../stores/accountManagement';
 import { api } from '../services/api';
+import { formatBytesStrict, providerIcon, providerLabel } from '../composables/useFormatFile.js';
+import { useStorageStats } from '../composables/useStorageStats.js';
 
 const { t } = useI18n();
 const accountStore = useAccountManagementStore();
 const { accounts, isLoading, error, isDisconnectingId } = storeToRefs(accountStore);
 const route = useRoute();
 const router = useRouter();
+const { totalUsed, totalSpace, totalFree, usedFormatted, totalFormatted, freeFormatted, usedTotalLabel } = useStorageStats();
 
 const connectingProvider = ref('');
 const actionError = ref('');
@@ -79,10 +75,6 @@ const orderedAllocationAccounts = computed(() => {
 	return ordered;
 });
 
-const totalUsed = computed(() => accounts.value.reduce((sum, account) => sum + Number(account.used_space || 0), 0));
-const totalSpace = computed(() => accounts.value.reduce((sum, account) => sum + Number(account.total_space || 0), 0));
-const totalFree = computed(() => Math.max(0, totalSpace.value - totalUsed.value));
-
 const accountPalette = [
 	{
 		used: 'bg-[#1a73e8]',
@@ -115,49 +107,49 @@ const providerConnectOptions = computed(() => [
 		key: 'google_drive',
 		label: t('providers.googleDrive'),
 		busyLabel: t('storage.connectingProvider', { provider: 'Google' }),
-		icon: googleDriveLogo,
+		icon: providerIcon('google_drive'),
 		action: connectGoogleDrive,
 	},
 	{
 		key: 'onedrive',
 		label: t('providers.oneDrive'),
 		busyLabel: t('storage.connectingProvider', { provider: 'OneDrive' }),
-		icon: oneDriveLogo,
+		icon: providerIcon('onedrive'),
 		action: connectOneDrive,
 	},
 	{
 		key: 'dropbox',
 		label: t('providers.dropbox'),
 		busyLabel: t('storage.connectingProvider', { provider: 'Dropbox' }),
-		icon: dropboxLogo,
+		icon: providerIcon('dropbox'),
 		action: connectDropbox,
 	},
 	{
 		key: 'mega',
 		label: t('providers.mega'),
 		busyLabel: t('storage.connectingProvider', { provider: 'MEGA' }),
-		icon: megaLogo,
+		icon: providerIcon('mega'),
 		action: openMegaModal,
 	},
 	{
 		key: 'pcloud',
 		label: t('providers.pcloud'),
 		busyLabel: t('storage.connectingProvider', { provider: 'pCloud' }),
-		icon: pcloudLogo,
+		icon: providerIcon('pcloud'),
 		action: openPCloudModal,
 	},
 	{
 		key: 'yandex',
 		label: t('providers.yandex'),
 		busyLabel: t('storage.connectingProvider', { provider: 'Yandex' }),
-		icon: yandexLogo,
+		icon: providerIcon('yandex'),
 		action: connectYandex,
 	},
 	{
 		key: 's3',
 		label: t('providers.s3'),
 		busyLabel: t('storage.connectingProvider', { provider: 'S3' }),
-		icon: s3Logo,
+		icon: providerIcon('s3'),
 		action: openS3Modal,
 	},
 ]);
@@ -211,40 +203,6 @@ const accountLegends = computed(() =>
 		};
 	}),
 );
-
-function formatBytes(value) {
-	if (!value) return '0 B';
-	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-	let amount = Number(value);
-	let index = 0;
-	while (amount >= 1024 && index < units.length - 1) {
-		amount /= 1024;
-		index += 1;
-	}
-	return `${amount.toFixed(amount >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
-}
-
-function providerLabel(provider) {
-	if (provider === 'google_drive') return 'Google Drive';
-	if (provider === 'onedrive') return 'OneDrive';
-	if (provider === 'dropbox') return 'Dropbox';
-	if (provider === 'mega') return 'MEGA';
-	if (provider === 'pcloud') return 'pCloud';
-	if (provider === 'yandex') return 'Yandex Disk';
-	if (provider === 's3') return 'S3 Storage';
-	return provider;
-}
-
-function providerIcon(provider) {
-	if (provider === 'google_drive') return googleDriveLogo;
-	if (provider === 'onedrive') return oneDriveLogo;
-	if (provider === 'dropbox') return dropboxLogo;
-	if (provider === 'mega') return megaLogo;
-	if (provider === 'pcloud') return pcloudLogo;
-	if (provider === 'yandex') return yandexLogo;
-	if (provider === 's3') return s3Logo;
-	return null;
-}
 
 function providerBadgeClass(status) {
 	return status === 'active'
@@ -637,18 +595,18 @@ onMounted(async () => {
 						</div>
 						<div>
 							<p class="text-sm text-[#5f6368] dark:text-slate-400">{{ t('storage.totalStorage') }}</p>
-							<strong class="text-xl">{{ formatBytes(totalUsed) }} / {{ formatBytes(totalSpace) }}</strong>
+							<strong class="text-xl">{{ usedTotalLabel }}</strong>
 						</div>
 					</div>
 
 					<div class="min-w-[220px] rounded-[22px] bg-[#f8fafd] px-4 py-3 text-sm dark:bg-slate-800/80">
 						<div class="flex items-center justify-between gap-3">
 							<span class="text-[#5f6368] dark:text-slate-400">{{ t('storage.usedSpace') }}</span>
-							<strong>{{ formatBytes(totalUsed) }}</strong>
+							<strong>{{ usedFormatted }}</strong>
 						</div>
 						<div class="mt-2 flex items-center justify-between gap-3">
 							<span class="text-[#5f6368] dark:text-slate-400">{{ t('storage.freeSpace') }}</span>
-							<strong>{{ formatBytes(totalFree) }}</strong>
+							<strong>{{ freeFormatted }}</strong>
 						</div>
 					</div>
 				</div>
@@ -691,8 +649,8 @@ onMounted(async () => {
 						</div>
 
 						<div class="mt-3 flex items-center justify-between gap-3 text-sm">
-							<span class="text-[#5f6368] dark:text-slate-400">{{ formatBytes(account.used) }} / {{ formatBytes(account.total_space) }}</span>
-							<span class="font-medium" :class="account.palette.text">{{ formatBytes(account.free) }} {{ t('storage.empty') }}</span>
+							<span class="text-[#5f6368] dark:text-slate-400">{{ formatBytesStrict(account.used) }} / {{ formatBytesStrict(account.total_space) }}</span>
+							<span class="font-medium" :class="account.palette.text">{{ formatBytesStrict(account.free) }} {{ t('storage.empty') }}</span>
 						</div>
 
 						<div class="mt-4 flex items-center justify-between gap-3">
@@ -748,7 +706,7 @@ onMounted(async () => {
 								</div>
 								<div class="min-w-0 flex-1">
 									<TruncateMarquee as="p" class="text-sm font-medium" :text="account.email" />
-									<p class="text-xs text-[#5f6368] dark:text-slate-400">{{ providerLabel(account.provider) }} · {{ formatBytes(Number(account.total_space) - Number(account.used_space)) }} {{ t('storage.free').toLowerCase() }}</p>
+									<p class="text-xs text-[#5f6368] dark:text-slate-400">{{ providerLabel(account.provider) }} · {{ formatBytesStrict(Number(account.total_space) - Number(account.used_space)) }} {{ t('storage.free').toLowerCase() }}</p>
 								</div>
 								<div class="flex shrink-0 items-center gap-1">
 									<button type="button" class="grid size-8 place-items-center rounded-full text-[#5f6368] transition hover:bg-[#f1f3f4] disabled:opacity-40 dark:text-slate-400 dark:hover:bg-slate-800" :disabled="index === 0" :title="t('allocation.moveUp')" @click="moveAccount(index, -1)"><IconArrowUp :size="16" :stroke="2" /></button>

@@ -40,7 +40,7 @@
 		"cancel": "Batal",
 		"save": "Simpan",
 		"delete": "Hapus",
-		"edit": "Edit",
+		"rename": "Ubah Nama",
 		"download": "Unduh",
 		"upload": "Unggah",
 		"folder": "Folder",
@@ -91,7 +91,6 @@
 		"storageUsed": "{used} dari {total} telah digunakan"
 	},
 	"home": {
-		"title": "Beranda",
 		"subtitle": "Cloud accounts",
 		"heroTitle": "Hubungkan akun dan lihat seluruh file seperti tampilan Drive.",
 		"heroDesc": "Sinkronisasi metadata akun cloud asli dan tampilkan daftar file dalam antarmuka yang menyerupai Google Drive.",

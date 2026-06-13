@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { IconBrandGoogleDrive } from '@tabler/icons-vue';
 import { api } from '../services/api';
+import { formatBytesStrict } from '../composables/useFormatFile.js';
 
 const { t } = useI18n();
 
@@ -12,18 +13,6 @@ const props = defineProps({
 
 const isConnecting = ref(false);
 const connectError = ref('');
-
-function formatBytes(value) {
-	if (!value) return '0 B';
-	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-	let amount = Number(value);
-	let unitIndex = 0;
-	while (amount >= 1024 && unitIndex < units.length - 1) {
-		amount /= 1024;
-		unitIndex += 1;
-	}
-	return `${amount.toFixed(amount >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
-}
 
 function usagePercent(account) {
 	if (!Number(account.total_space)) return 0;
@@ -75,8 +64,8 @@ async function connectGoogleDrive() {
 				</div>
 
 				<div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-[#5f6368]">
-					<span>{{ formatBytes(account.used_space) }} {{ t('storagePanel.used') }}</span>
-					<span>{{ formatBytes(account.free_space) }} {{ t('storagePanel.free') }}</span>
+					<span>{{ formatBytesStrict(account.used_space) }} {{ t('storagePanel.used') }}</span>
+					<span>{{ formatBytesStrict(account.free_space) }} {{ t('storagePanel.free') }}</span>
 				</div>
 			</article>
 

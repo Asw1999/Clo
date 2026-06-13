@@ -30,6 +30,18 @@ function findChildFolder(parent, name) {
 	return (parent.children || []).find((child) => child.directory && child.name === name) || null;
 }
 
+function hasAncestor(node, target) {
+	if (!node || !target) return false;
+	let cursor = node.parent;
+	const seen = new WeakSet();
+	while (cursor && !seen.has(cursor)) {
+		if (cursor === target) return true;
+		seen.add(cursor);
+		cursor = cursor.parent;
+	}
+	return false;
+}
+
 export class MegaAdapter extends BaseCloudAdapter {
 	constructor(account) {
 		super(account);
@@ -179,7 +191,7 @@ export class MegaAdapter extends BaseCloudAdapter {
 
 		return files
 			.filter((file) => file && file !== storage.root && file !== storage.trash && file !== storage.inbox && file.name)
-			.filter((file) => file.parent !== storage.trash && file.parent !== storage.inbox)
+			.filter((file) => !hasAncestor(file, storage.trash) && !hasAncestor(file, storage.inbox))
 			.map((file) => ({
 				virtual_path: buildVirtualPath(file),
 				file_name: file.name,

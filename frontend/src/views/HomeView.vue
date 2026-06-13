@@ -2,22 +2,13 @@
 import { computed, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useI18n } from 'vue-i18n';
-import {
-	IconFileDescription,
-	IconInfoCircle,
-	IconLayoutList,
-} from '@tabler/icons-vue';
-import dropboxLogo from '../assets/dropbox.svg';
-import googleDriveLogo from '../assets/google-drive.svg';
-import megaLogo from '../assets/mega.svg';
-import oneDriveLogo from '../assets/microsoft-onedrive.svg';
-import pcloudLogo from '../assets/pcloud.svg';
-import yandexLogo from '../assets/yandex-disk.svg';
-import s3Logo from '../assets/s3-storage.svg';
+import { IconFileDescription } from '@tabler/icons-vue';
 import DriveShell from '../components/DriveShell.vue';
 import TruncateMarquee from '../components/TruncateMarquee.vue';
 import { useFileTreeStore } from '../stores/fileTree';
 import { useAccountManagementStore } from '../stores/accountManagement';
+import { getModifiedTime, formatDate, providerIcon, providerLabel, formatBytesStrict } from '../composables/useFormatFile.js';
+import { useStorageStats } from '../composables/useStorageStats.js';
 
 const { t } = useI18n();
 
@@ -25,63 +16,9 @@ const fileTreeStore = useFileTreeStore();
 const accountStore = useAccountManagementStore();
 
 const { files, isLoading } = storeToRefs(fileTreeStore);
-const { accounts } = storeToRefs(accountStore);
+const { storagePercentRounded, storageLabel, usedFormatted, usedTotalLabel, totalUsed } = useStorageStats();
 
 const quickFiles = computed(() => files.value.filter((file) => !file.is_folder).slice(0, 6));
-
-const totalUsed = computed(() => accounts.value.reduce((sum, account) => sum + Number(account.used_space || 0), 0));
-const totalSpace = computed(() => accounts.value.reduce((sum, account) => sum + Number(account.total_space || 0), 0));
-const storagePercent = computed(() => {
-	if (!totalSpace.value) return 0;
-	return Math.min(100, Math.round((totalUsed.value / totalSpace.value) * 100));
-});
-
-function formatBytes(value) {
-	if (!value) return '0 B';
-	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-	let amount = Number(value);
-	let index = 0;
-	while (amount >= 1024 && index < units.length - 1) {
-		amount /= 1024;
-		index += 1;
-	}
-	return `${amount.toFixed(amount >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
-}
-
-function formatDate(value) {
-	if (!value) return t('home.justNow');
-	return new Intl.DateTimeFormat('id-ID', {
-		day: 'numeric',
-		month: 'short',
-		year: 'numeric',
-	}).format(new Date(value));
-}
-
-function getModifiedTime(file) {
-	return file.modifiedTime;
-}
-
-function providerLabel(provider) {
-	if (provider === 'google_drive') return 'Google Drive';
-	if (provider === 'onedrive') return 'OneDrive';
-	if (provider === 'dropbox') return 'Dropbox';
-	if (provider === 'mega') return 'MEGA';
-	if (provider === 'pcloud') return 'pCloud';
-	if (provider === 'yandex') return 'Yandex Disk';
-	if (provider === 's3') return 'S3 Storage';
-	return provider || 'Provider';
-}
-
-function providerIcon(provider) {
-	if (provider === 'google_drive') return googleDriveLogo;
-	if (provider === 'onedrive') return oneDriveLogo;
-	if (provider === 'dropbox') return dropboxLogo;
-	if (provider === 'mega') return megaLogo;
-	if (provider === 'pcloud') return pcloudLogo;
-	if (provider === 'yandex') return yandexLogo;
-	if (provider === 's3') return s3Logo;
-	return null;
-}
 
 async function loadPage() {
 	await Promise.all([fileTreeStore.loadFiles('/'), accountStore.loadAccounts()]);
@@ -92,20 +29,7 @@ onMounted(loadPage);
 
 <template>
 	<DriveShell current-section="home">
-		<div class="min-h-[calc(100vh-84px)] rounded-[24px] bg-white px-4 py-[18px] pb-7 text-[#202124] dark:bg-slate-800 dark:text-slate-100 sm:px-6">
-			<div class="mb-[18px] flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-				<h1 class="m-0 text-2xl font-normal text-[#202124] dark:text-slate-100">{{ t('home.title') }}</h1>
-
-				<div class="flex items-center gap-2">
-					<button type="button" class="grid size-9 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-400 dark:hover:bg-white/8">
-						<IconInfoCircle :size="18" :stroke="2" />
-					</button>
-					<button type="button" class="grid size-9 place-items-center rounded-full text-[#5f6368] hover:bg-black/5 dark:text-slate-400 dark:hover:bg-white/8">
-						<IconLayoutList :size="18" :stroke="2" />
-					</button>
-				</div>
-			</div>
-
+		<div class="min-h-[calc(100vh-84px)] rounded-[24px] bg-white px-4 py-6 text-[#202124] dark:bg-slate-800 dark:text-slate-100 sm:px-6">
 			<section class="mb-7 grid gap-5 rounded-[20px] bg-gradient-to-b from-[#e8f0fe] to-[#f1f6ff] p-7 dark:from-slate-900 dark:to-slate-800 sm:grid-cols-[minmax(0,1.6fr)_280px]">
 				<div>
 					<p class="mb-2 text-xs font-bold uppercase tracking-[0.08em] text-[#1a73e8]">{{ t('home.subtitle') }}</p>
@@ -125,12 +49,12 @@ onMounted(loadPage);
 				</div>
 
 				<div class="flex flex-col items-center justify-center gap-3.5 rounded-[20px] border border-[#e0e3e7] bg-white p-5 text-center dark:border-slate-700 dark:bg-slate-800/80">
-					<div class="grid size-[116px] place-items-center rounded-full" :style="{ background: `conic-gradient(#1a73e8 0 ${storagePercent}%, #eaf1fb ${storagePercent}% 100%)` }">
-						<div class="grid size-[82px] place-items-center rounded-full bg-white font-bold text-[#1a73e8] dark:bg-slate-900">{{ storagePercent }}%</div>
+					<div class="grid size-[116px] place-items-center rounded-full" :style="{ background: `conic-gradient(#1a73e8 0 ${storagePercentRounded}%, #eaf1fb ${storagePercentRounded}% 100%)` }">
+						<div class="grid size-[82px] place-items-center rounded-full bg-white font-bold text-[#1a73e8] dark:bg-slate-900">{{ storagePercentRounded }}%</div>
 					</div>
 					<div>
-						<strong>{{ formatBytes(totalUsed) }}</strong>
-						<p class="text-[#5f6368] dark:text-slate-400">{{ t('sidebar.storageUsed', { used: formatBytes(totalUsed), total: formatBytes(totalSpace) }) }}</p>
+						<strong>{{ usedFormatted }}</strong>
+						<p class="text-[#5f6368] dark:text-slate-400">{{ storageLabel }}</p>
 					</div>
 				</div>
 			</section>
@@ -161,7 +85,7 @@ onMounted(loadPage);
 							<TruncateMarquee class="min-w-0" :text="file.email" />
 						</div>
 						<span class="text-[#5f6368] dark:text-slate-400">{{ formatDate(getModifiedTime(file)) }}</span>
-						<span class="text-[#5f6368] dark:text-slate-400 max-md:hidden">{{ formatBytes(file.size) }}</span>
+						<span class="text-[#5f6368] dark:text-slate-400 max-md:hidden">{{ formatBytesStrict(file.size) }}</span>
 					</div>
 
 					<div v-if="!quickFiles.length && !isLoading" class="p-[18px] text-[#5f6368] dark:text-slate-400">{{ t('home.noFiles') }}</div>
