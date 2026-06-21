@@ -16,7 +16,9 @@ const encryptionKey = crypto.createHash('sha256').update(derivedKeyMaterial).dig
 export const env = {
 	port: Number(process.env.PORT || 8787),
 	appMode: process.env.APP_MODE === 'hosted' ? 'hosted' : 'local',
-	corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+	corsOrigin: process.env.CORS_ORIGIN 
+		? process.env.CORS_ORIGIN.split(',').map(s => s.trim()) 
+		: ['http://localhost:5173', 'http://localhost', 'capacitor://localhost'],
 	syncIntervalMinutes: Number(process.env.SYNC_INTERVAL_MINUTES || 5),
 	authCookieName: process.env.AUTH_COOKIE_NAME || 'omnicloud_session',
 	authSessionTtlHours: Number(process.env.AUTH_SESSION_TTL_HOURS || 24 * 14),
