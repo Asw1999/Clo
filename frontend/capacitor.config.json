@@ -1,0 +1,6 @@
+{
+  "appId": "com.omnicloud.app",
+  "appName": "OmniCloud",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}

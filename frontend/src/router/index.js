@@ -26,33 +26,27 @@ const router = createRouter({
 		},
 		{
 			path: '/',
-			name: 'home',
-			component: HomeView,
+			name: 'home', component: HomeView, meta: { keepAlive: true },
 		},
 		{
 			path: '/my-drive',
-			name: 'my-drive',
-			component: MyDriveView,
+			name: 'my-drive', component: MyDriveView, meta: { keepAlive: true },
 		},
 		{
 			path: '/shared-with-me',
-			name: 'shared-with-me',
-			component: SharedWithMeView,
+			name: 'shared-with-me', component: SharedWithMeView, meta: { keepAlive: true },
 		},
 		{
 			path: '/recent',
-			name: 'recent',
-			component: RecentView,
+			name: 'recent', component: RecentView, meta: { keepAlive: true },
 		},
 		{
 			path: '/starred',
-			name: 'starred',
-			component: StarredView,
+			name: 'starred', component: StarredView, meta: { keepAlive: true },
 		},
 		{
 			path: '/quota',
-			name: 'quota',
-			component: QuotaView,
+			name: 'quota', component: QuotaView, meta: { keepAlive: true },
 		},
 	],
 });

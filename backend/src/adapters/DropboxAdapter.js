@@ -2,6 +2,7 @@ import { Readable } from 'stream';
 import { BaseCloudAdapter } from './BaseCloudAdapter.js';
 import { guessMimeType } from '../utils/mime.js';
 import { decryptJson } from '../utils/crypto.js';
+import { withPathLock } from '../utils/pathMutex.js';
 
 function normalizePath(input = '/') {
 	if (!input || input === '/') return '/';
@@ -167,26 +168,28 @@ export class DropboxAdapter extends BaseCloudAdapter {
 	}
 
 	async ensureRemotePath(virtualPath = '/') {
-		const normalizedPath = normalizePath(virtualPath);
-		if (normalizedPath === '/') return '';
+		return withPathLock(this.account.id, virtualPath, async () => {
+			const normalizedPath = normalizePath(virtualPath);
+			if (normalizedPath === '/') return '';
 
-		const segments = normalizedPath.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
-		let currentPath = '';
+			const segments = normalizedPath.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+			let currentPath = '';
 
-		for (const segment of segments) {
-			currentPath = joinDropboxPath(currentPath || '/', segment);
-			try {
-				await this.rpc('/files/get_metadata', { path: currentPath });
-			} catch (error) {
-				if (!error.message.includes('not_found')) throw error;
-				await this.rpc('/files/create_folder_v2', {
-					path: currentPath,
-					autorename: false,
-				});
+			for (const segment of segments) {
+				currentPath = joinDropboxPath(currentPath || '/', segment);
+				try {
+					await this.rpc('/files/get_metadata', { path: currentPath });
+				} catch (error) {
+					if (!error.message.includes('not_found')) throw error;
+					await this.rpc('/files/create_folder_v2', {
+						path: currentPath,
+						autorename: false,
+					});
+				}
 			}
-		}
 
-		return currentPath;
+			return currentPath;
+		});
 	}
 
 	async fetchStructure() {

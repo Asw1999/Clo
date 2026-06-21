@@ -175,20 +175,38 @@ export const api = {
 			signal: options.signal,
 		});
 	},
-	async uploadFile(uploadId, file, options = {}) {
-		const formData = new FormData();
-		formData.append('file', file);
-
-		const response = await fetch(`${API_BASE_URL}/uploads/${uploadId}/stream`, {
+	async uploadChunk(uploadId, chunkBlob, offset, options = {}) {
+		const response = await fetch(`${API_BASE_URL}/uploads/${uploadId}/chunk`, {
 			method: 'POST',
 			credentials: 'include',
-			body: formData,
+			headers: {
+				'x-upload-offset': String(offset),
+				'Content-Type': 'application/octet-stream',
+			},
+			body: chunkBlob,
 			signal: options.signal,
 		});
 
 		if (!response.ok) {
-			const payload = await response.json().catch(() => ({ error: 'Upload failed' }));
-			throw new Error(payload.error || 'Upload failed');
+			const payload = await response.json().catch(() => ({ error: 'Upload chunk failed' }));
+			throw new Error(payload.error || 'Upload chunk failed');
+		}
+
+		return response.json();
+	},
+	async commitUpload(uploadId, options = {}) {
+		const response = await fetch(`${API_BASE_URL}/uploads/${uploadId}/commit`, {
+			method: 'POST',
+			credentials: 'include',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			signal: options.signal,
+		});
+
+		if (!response.ok) {
+			const payload = await response.json().catch(() => ({ error: 'Upload commit failed' }));
+			throw new Error(payload.error || 'Upload commit failed');
 		}
 
 		return response.json();

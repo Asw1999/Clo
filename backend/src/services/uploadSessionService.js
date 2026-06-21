@@ -26,6 +26,18 @@ export function getUploadSessionForUser(userId, id) {
 	return session;
 }
 
+export function findSessionByFingerprint(userId, fingerprint) {
+	if (!fingerprint) return null;
+	for (const session of sessions.values()) {
+		if (session.user_id === userId && session.fingerprint === fingerprint) {
+			if (['pending', 'uploading'].includes(session.status)) {
+				return session;
+			}
+		}
+	}
+	return null;
+}
+
 export function updateUploadSession(id, patch) {
 	const session = sessions.get(id);
 	if (!session) return null;

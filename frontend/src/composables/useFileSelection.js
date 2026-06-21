@@ -50,7 +50,12 @@ export function useFileSelection({ sourceList, onBeforeSelect } = {}) {
 		lastSelectedFileId.value = file.id;
 	}
 
-	function selectItem(event, file) {
+	function selectAll() {
+		selectedFileIds.value = new Set(sourceList.value.map((item) => item.id));
+		lastSelectedFileId.value = sourceList.value[sourceList.value.length - 1]?.id || null;
+	}
+
+	function selectItem(event, file, onOpenCallback) {
 		event.preventDefault();
 		event.stopPropagation();
 		if (typeof onBeforeSelect === 'function') onBeforeSelect();
@@ -62,6 +67,17 @@ export function useFileSelection({ sourceList, onBeforeSelect } = {}) {
 
 		if (event.ctrlKey || event.metaKey) {
 			toggleSelection(file);
+			return;
+		}
+
+		const isTouch = event.pointerType === 'touch' || (event.sourceCapabilities && event.sourceCapabilities.firesTouchEvents);
+
+		if (isTouch) {
+			if (selectedCount.value > 0) {
+				toggleSelection(file);
+			} else if (typeof onOpenCallback === 'function') {
+				onOpenCallback();
+			}
 			return;
 		}
 
@@ -84,6 +100,7 @@ export function useFileSelection({ sourceList, onBeforeSelect } = {}) {
 		toggleSelection,
 		selectRange,
 		selectItem,
+		selectAll,
 		clearSelection,
 	};
 }

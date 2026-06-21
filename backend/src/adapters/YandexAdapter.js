@@ -2,6 +2,7 @@ import { Readable } from 'stream';
 import { BaseCloudAdapter } from './BaseCloudAdapter.js';
 import { decryptJson } from '../utils/crypto.js';
 import { updateAccountCredentials } from '../services/accountService.js';
+import { withPathLock } from '../utils/pathMutex.js';
 
 const API_BASE = 'https://cloud-api.yandex.net/v1/disk';
 
@@ -175,19 +176,21 @@ export class YandexAdapter extends BaseCloudAdapter {
 	}
 
 	async ensureFolder(virtualPath = '/') {
-		const normalized = normalizeVirtualPath(virtualPath);
-		if (normalized === '/') return;
+		return withPathLock(this.account.id, virtualPath, async () => {
+			const normalized = normalizeVirtualPath(virtualPath);
+			if (normalized === '/') return;
 
-		const segments = normalized.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
-		let current = '';
-		for (const segment of segments) {
-			current = `${current}/${segment}`;
-			try {
-				await this.request('/resources', { method: 'PUT', query: { path: current } });
-			} catch (error) {
-				if (error?.status !== 409) throw error;
+			const segments = normalized.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+			let current = '';
+			for (const segment of segments) {
+				current = `${current}/${segment}`;
+				try {
+					await this.request('/resources', { method: 'PUT', query: { path: current } });
+				} catch (error) {
+					if (error?.status !== 409) throw error;
+				}
 			}
-		}
+		});
 	}
 
 	async uploadStream({ stream, size, fileName, mimeType, virtualPath = '/', onProgress }) {

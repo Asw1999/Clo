@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
 	IconArrowRight,
@@ -48,6 +48,8 @@ const visibleUploads = computed(() => {
 
 	return groups.map((group) => {
 		const itemCount = group.batchTotal || group.items.length;
+		const completedCount = group.items.filter((item) => item.status === 'completed').length;
+		const remainingCount = itemCount - completedCount;
 		const statuses = group.items.map((item) => item.status);
 		const failedItem = group.items.find((item) => item.status === 'failed');
 		const activeItem = group.items.find((item) => !['completed', 'failed', 'cancelled'].includes(item.status));
@@ -60,8 +62,9 @@ const visibleUploads = computed(() => {
 
 		return {
 			...group,
-			name: itemCount > 1 ? `${itemCount} item` : group.name,
+			name: itemCount > 1 ? `${remainingCount > 0 ? remainingCount : itemCount} item` : group.name,
 			itemCount,
+			remainingCount,
 			status,
 			error: failedItem?.error || group.error,
 			progress_percentage: progress,
@@ -77,10 +80,12 @@ const toastTitle = computed(() => {
 	if (!latestTask) return '';
 
 	const type = latestTask.type || 'upload';
-	const taskCount = latestTask.itemCount || 1;
+	const taskCount = latestTask.remainingCount > 0 ? latestTask.remainingCount : (latestTask.itemCount || 1);
+	const isAllCompleted = latestTask.status === 'completed';
+	
 	const labels = {
-		upload: t('upload.uploading'),
-		download: t('upload.downloading'),
+		upload: isAllCompleted ? t('upload.completed') : t('upload.uploading'),
+		download: isAllCompleted ? t('upload.completed') : t('upload.downloading'),
 		'create-folder': t('upload.creating'),
 		rename: t('upload.renaming'),
 		delete: t('upload.deleting'),
@@ -91,7 +96,11 @@ const toastTitle = computed(() => {
 		return `${labels[type] || t('upload.processing')} ${taskCount} ${targetKind}`;
 	}
 
-	return `${labels[type] || t('upload.processing')} ${taskCount} ${t('upload.item')}`;
+	if (isAllCompleted) {
+		return `${labels[type]} (${latestTask.itemCount} ${t('upload.item')})`;
+	}
+
+	return `${labels[type] || t('upload.processing')} ${taskCount} ${t('upload.item')} ${t('common.remaining', 'tersisa')}`;
 });
 
 const summaryText = computed(() => {
@@ -105,6 +114,13 @@ function closeToast() {
 	isDismissed.value = true;
 	emit('close');
 }
+
+watch(() => props.uploads.length, (newLength, oldLength) => {
+	if (newLength > oldLength) {
+		isDismissed.value = false;
+		isMinimized.value = false;
+	}
+});
 
 function formatStatus(upload) {
 	if (upload.error) return upload.error;
@@ -137,7 +153,7 @@ function iconFor(upload) {
 </script>
 
 <template>
-	<aside v-if="visibleUploads.length && !isDismissed" class="fixed bottom-0 right-4 z-50 w-[360px] overflow-hidden rounded-t-[18px] border border-b-0 border-[#e6ebf2] bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_16px_40px_rgba(15,23,42,0.35)]">
+	<aside v-if="visibleUploads.length && !isDismissed" class="fixed bottom-24 left-2 right-2 z-[60] overflow-hidden rounded-[18px] border border-[#e6ebf2] bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_16px_40px_rgba(15,23,42,0.35)] sm:left-auto sm:w-[360px] lg:bottom-0 lg:right-4 lg:rounded-b-none lg:border-b-0">
 		<header class="flex h-[54px] items-center justify-between gap-3 px-5 text-[#202124] dark:text-slate-100">
 			<strong class="text-base font-medium">{{ toastTitle }}</strong>
 			<div class="flex items-center gap-2">
@@ -151,9 +167,12 @@ function iconFor(upload) {
 		</header>
 
 		<div v-show="!isMinimized">
+			<div class="relative h-1 w-full bg-slate-200 dark:bg-slate-700">
+				<div class="absolute left-0 top-0 h-1 bg-[#1a73e8] transition-all duration-300 dark:bg-sky-500" :style="{ width: `${totalProgress}%` }"></div>
+			</div>
 			<div class="flex h-9 items-center justify-between bg-[#fbfcff] px-5 text-sm text-[#5f6368] dark:bg-slate-800/70 dark:text-slate-300">
 				<span>{{ summaryText }}</span>
-				<span v-if="activeCount" class="font-medium text-[#1a73e8]">{{ totalProgress }}%</span>
+				<span v-if="activeCount" class="font-medium text-[#1a73e8] dark:text-sky-400">{{ totalProgress }}%</span>
 			</div>
 
 			<div class="max-h-[260px] overflow-y-auto py-2">

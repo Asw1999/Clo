@@ -1,6 +1,7 @@
 import { Readable } from 'stream';
 import { BaseCloudAdapter } from './BaseCloudAdapter.js';
 import { decryptJson } from '../utils/crypto.js';
+import { withPathLock } from '../utils/pathMutex.js';
 
 function normalizePath(input = '/') {
 	if (!input || input === '/') return '/';
@@ -135,42 +136,44 @@ export class OneDriveAdapter extends BaseCloudAdapter {
 	}
 
 	async ensureRemotePath(virtualPath = '/') {
-		const normalizedPath = normalizePath(virtualPath);
-		if (normalizedPath === '/') {
-			return 'root';
-		}
-
-		const segments = normalizedPath.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
-		let parentId = 'root';
-
-		for (const segment of segments) {
-			const children = await this.listChildren(parentId);
-			const existing = children.find((item) => item.folder && item.name === segment);
-
-			if (existing) {
-				parentId = existing.id;
-				continue;
+		return withPathLock(this.account.id, virtualPath, async () => {
+			const normalizedPath = normalizePath(virtualPath);
+			if (normalizedPath === '/') {
+				return 'root';
 			}
 
-			const created = await this.graph(
-				parentId === 'root' ? '/me/drive/root/children' : `/me/drive/items/${encodeURIComponent(parentId)}/children`,
-				{
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
+			const segments = normalizedPath.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+			let parentId = 'root';
+
+			for (const segment of segments) {
+				const children = await this.listChildren(parentId);
+				const existing = children.find((item) => item.folder && item.name === segment);
+
+				if (existing) {
+					parentId = existing.id;
+					continue;
+				}
+
+				const created = await this.graph(
+					parentId === 'root' ? '/me/drive/root/children' : `/me/drive/items/${encodeURIComponent(parentId)}/children`,
+					{
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({
+							name: segment,
+							folder: {},
+							'@microsoft.graph.conflictBehavior': 'rename',
+						}),
 					},
-					body: JSON.stringify({
-						name: segment,
-						folder: {},
-						'@microsoft.graph.conflictBehavior': 'rename',
-					}),
-				},
-			);
+				);
 
-			parentId = created.id;
-		}
+				parentId = created.id;
+			}
 
-		return parentId;
+			return parentId;
+		});
 	}
 
 	async fetchStructure() {

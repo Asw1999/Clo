@@ -2,6 +2,8 @@ import { google } from 'googleapis';
 import { BaseCloudAdapter } from './BaseCloudAdapter.js';
 import { decryptJson } from '../utils/crypto.js';
 
+import { withPathLock } from '../utils/pathMutex.js';
+
 const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 
 function normalizePath(input = '/') {
@@ -48,46 +50,48 @@ export class GoogleDriveAdapter extends BaseCloudAdapter {
 	}
 
 	async ensureRemotePath(virtualPath = '/') {
-		const normalizedPath = normalizePath(virtualPath);
-		if (normalizedPath === '/') {
-			return 'root';
-		}
-
-		const drive = await this.getDriveClient();
-		const segments = normalizedPath.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
-		let parentId = 'root';
-
-		for (const segment of segments) {
-			const response = await drive.files.list({
-				q: [
-					`trashed = false`,
-					`mimeType = '${FOLDER_MIME_TYPE}'`,
-					`name = '${escapeDriveQueryValue(segment)}'`,
-					`'${parentId}' in parents`,
-				].join(' and '),
-				fields: 'files(id, name)',
-				pageSize: 1,
-			});
-
-			const existing = response.data.files?.[0];
-			if (existing) {
-				parentId = existing.id;
-				continue;
+		return withPathLock(this.account.id, virtualPath, async () => {
+			const normalizedPath = normalizePath(virtualPath);
+			if (normalizedPath === '/') {
+				return 'root';
 			}
 
-			const created = await drive.files.create({
-				requestBody: {
-					name: segment,
-					mimeType: FOLDER_MIME_TYPE,
-					parents: [parentId],
-				},
-				fields: 'id, parents',
-			});
+			const drive = await this.getDriveClient();
+			const segments = normalizedPath.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+			let parentId = 'root';
 
-			parentId = created.data.id;
-		}
+			for (const segment of segments) {
+				const response = await drive.files.list({
+					q: [
+						`trashed = false`,
+						`mimeType = '${FOLDER_MIME_TYPE}'`,
+						`name = '${escapeDriveQueryValue(segment)}'`,
+						`'${parentId}' in parents`,
+					].join(' and '),
+					fields: 'files(id, name)',
+					pageSize: 1,
+				});
 
-		return parentId;
+				const existing = response.data.files?.[0];
+				if (existing) {
+					parentId = existing.id;
+					continue;
+				}
+
+				const created = await drive.files.create({
+					requestBody: {
+						name: segment,
+						mimeType: FOLDER_MIME_TYPE,
+						parents: [parentId],
+					},
+					fields: 'id, parents',
+				});
+
+				parentId = created.data.id;
+			}
+
+			return parentId;
+		});
 	}
 
 	async fetchStructure() {

@@ -3,8 +3,6 @@ import { computed, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useI18n } from 'vue-i18n';
 import { IconChevronRight, IconFolder } from '@tabler/icons-vue';
-import DriveShell from '../components/DriveShell.vue';
-import FloatingProgressToast from '../components/FloatingProgressToast.vue';
 import FileListFilterBar from '../components/FileListFilterBar.vue';
 import FileListSelectionBar from '../components/FileListSelectionBar.vue';
 import FileListViewModeToggle from '../components/FileListViewModeToggle.vue';
@@ -60,6 +58,8 @@ const {
 	openContextMenu,
 	clearSelection,
 	selectItem,
+	selectAll,
+	toggleSelection,
 	canDownloadSelection,
 	canRenameSelection,
 	canToggleStarSelection,
@@ -174,8 +174,7 @@ useAutoRefresh(refreshShared, { intervalMs: 30000 });
 </script>
 
 <template>
-	<DriveShell current-section="shared">
-		<div class="relative min-h-[calc(100vh-84px)] rounded-[24px] bg-white px-4 py-[18px] pb-5 text-[#202124] dark:bg-slate-800 dark:text-slate-100 sm:px-6" @click="clearSelection">
+<div class="relative min-h-[calc(100vh-84px)] rounded-[24px] bg-white px-4 py-[18px] pb-5 text-[#202124] dark:bg-slate-800 dark:text-slate-100 sm:px-6" @click="clearSelection">
 			<div class="mb-2 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
 				<h1 class="m-0">
 					<nav aria-label="Breadcrumb" class="flex flex-wrap items-center gap-1 text-2xl font-normal text-[#202124] dark:text-slate-100">
@@ -189,7 +188,7 @@ useAutoRefresh(refreshShared, { intervalMs: 30000 });
 			</div>
 
 			<div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-				<FileListSelectionBar v-if="selectedCount" :selected-count="selectedCount" :can-preview="canPreviewSelection" :can-toggle-star="canToggleStarSelection" :is-primary-starred="isPrimarySelectedStarred" :can-download="canDownloadSelection" :can-rename="false" :can-delete="false" :primary-file="primarySelectedFile" @clear="clearSelection" @preview="openPreview" @toggle-star="toggleSelectedFileStar" @download="downloadSelection" @rename="renameSelectedFile" @show-details="showSelectedFileDetails" @delete="deleteSelectedFile">
+				<FileListSelectionBar v-if="selectedCount" :selected-count="selectedCount" :can-preview="canPreviewSelection" :can-toggle-star="canToggleStarSelection" :is-primary-starred="isPrimarySelectedStarred" :can-download="canDownloadSelection" :can-rename="false" :can-delete="false" :primary-file="primarySelectedFile" @clear="clearSelection" @select-all="selectAll" @preview="openPreview" @toggle-star="toggleSelectedFileStar" @download="downloadSelection" @rename="renameSelectedFile" @show-details="showSelectedFileDetails" @delete="deleteSelectedFile">
 					<template #prefix="{ primary }">
 						<button v-if="primary?.is_folder && selectedCount === 1" type="button" class="inline-flex size-9 items-center justify-center rounded-full transition enabled:hover:bg-[#d2e3fc] dark:enabled:hover:bg-sky-500/20" :title="t('common.open')" @click="openSelectedItem">
 							<IconFolder :size="18" :stroke="2" />
@@ -209,7 +208,7 @@ useAutoRefresh(refreshShared, { intervalMs: 30000 });
 
 							<template v-for="group in renderedGroupedFiles" :key="group.key">
 								<div class="sticky top-11 z-[1] bg-[#f8fafd] px-[18px] py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f6368] dark:bg-slate-900 dark:text-slate-400">{{ group.label }}</div>
-								<FileListRow v-for="item in group.items" :key="item.id" :item="item" :selected="isSelected(item)" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
+								<FileListRow v-for="item in group.items" :key="item.id" :item="item" :selected="isSelected(item)" @select="(event) => selectItem(event, item, () => openItemOnDoubleClick(item))" @toggle-select="toggleSelection(item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
 							</template>
 							<div v-if="!groupedFiles.length && !loading" class="p-[18px] text-[#5f6368] dark:text-slate-400">{{ t('shared.empty') }}</div>
 							<div v-if="loading" class="p-[18px]"><LoadingState /></div>
@@ -223,7 +222,7 @@ useAutoRefresh(refreshShared, { intervalMs: 30000 });
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
 					<template v-for="group in renderedGroupedFiles" :key="group.key">
 						<div class="col-span-full rounded-2xl bg-[#f8fafd] px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f6368] dark:bg-slate-900 dark:text-slate-400">{{ group.label }}</div>
-						<FileListGridCard v-for="item in group.items" :key="item.id" :item="item" :selected="isSelected(item)" @select="(event) => selectItem(event, item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
+						<FileListGridCard v-for="item in group.items" :key="item.id" :item="item" :selected="isSelected(item)" @select="(event) => selectItem(event, item, () => openItemOnDoubleClick(item))" @toggle-select="toggleSelection(item)" @open="openItemOnDoubleClick(item)" @contextmenu="(event) => openContextMenu(event, item)" />
 					</template>
 					<div v-if="!groupedFiles.length && !loading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">{{ t('shared.empty') }}</div>
 					<div v-if="loading" class="col-span-full rounded-2xl border border-dashed border-[#dadce0] bg-white px-5 py-8 text-center text-[#5f6368] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"><LoadingState /></div>
@@ -236,7 +235,4 @@ useAutoRefresh(refreshShared, { intervalMs: 30000 });
 			<FileDetailsModal :file="detailsFile" :is-open="isDetailsOpen" :provider-label-fn="providerLabel" @close="closeDetails" />
 			<FilePreviewModal :file="previewFile" :is-open="isPreviewOpen" :is-loading="isPreviewLoading" @close="closePreview" @loaded="handlePreviewLoaded" @failed="handlePreviewFailed" />
 		</div>
-
-		<FloatingProgressToast :uploads="uploads" :total-progress="totalProgress" @close="uploadQueueStore.clearOperations" @close-item="uploadQueueStore.closeOperation" />
-	</DriveShell>
 </template>

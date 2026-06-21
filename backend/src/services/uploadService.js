@@ -1,3 +1,4 @@
+import fs from 'fs';
 import Busboy from 'busboy';
 import { PassThrough } from 'stream';
 import { createAdapter } from './adapterRegistry.js';
@@ -7,6 +8,7 @@ import { emitUploadEvent } from './websocketHub.js';
 import { getUploadSessionForUser, updateUploadSession, removeUploadSession } from './uploadSessionService.js';
 import { syncAccount } from './syncService.js';
 import { isAuthError } from '../utils/providerErrors.js';
+import { getTempFilePath, removeTempFile } from './chunkService.js';
 
 async function pipeUpload({ req, session }) {
 	return new Promise((resolve, reject) => {
@@ -143,4 +145,109 @@ export async function handleUpload(req, uploadId) {
 	});
 
 	return pipeUpload({ req, session });
+}
+
+export async function handleChunkedUploadCommit(userId, uploadId) {
+	const session = getUploadSessionForUser(userId, uploadId);
+	if (!session) throw new Error('Upload session not found');
+
+	const tempPath = getTempFilePath(uploadId);
+	if (!fs.existsSync(tempPath)) throw new Error('Temporary file not found');
+
+	updateUploadSession(uploadId, { status: 'uploading' });
+	emitUploadEvent(uploadId, {
+		type: 'upload:started',
+		uploadId,
+		percent: 0,
+		status: 'uploading',
+	});
+
+	let activeAccountId = session.cloud_account_id;
+	const tried = new Set();
+
+	const attemptUpload = async (accountId) => {
+		tried.add(accountId);
+		const account = getAccountById(userId, accountId);
+		if (!account) throw new Error('Target upload account not found');
+
+		const adapter = createAdapter(account);
+		const readStream = fs.createReadStream(tempPath);
+
+		const result = await adapter.uploadStream({
+			stream: readStream,
+			size: session.size,
+			fileName: session.file_name,
+			mimeType: session.mime_type,
+			virtualPath: session.virtual_path,
+			remoteParentId: session.remote_parent_id,
+			onProgress: (bytes) => {
+				const percent = Math.min(100, Math.round((bytes / session.size) * 100));
+				emitUploadEvent(uploadId, {
+					type: 'upload:progress',
+					uploadId,
+					bytes,
+					percent,
+					status: 'uploading',
+				});
+			},
+		});
+
+		return { result, account };
+	};
+
+	try {
+		let uploadResponse, account;
+		try {
+			({ result: uploadResponse, account } = await attemptUpload(activeAccountId));
+		} catch (error) {
+			if (isAuthError(error)) {
+				markAccountStatus(userId, activeAccountId, 'invalid_token');
+			}
+			const fallbackId = session.fallback_chain.find((id) => !tried.has(id));
+			if (!fallbackId) throw error;
+			activeAccountId = fallbackId;
+			({ result: uploadResponse, account } = await attemptUpload(activeAccountId));
+		}
+
+		const usedSpace = Number(account.used_space) + Number(session.size);
+		updateAccountUsage(userId, account.id, usedSpace);
+
+		let metadata = createFileMetadata({
+			user_id: userId,
+			virtual_path: session.virtual_path,
+			file_name: session.file_name,
+			is_folder: false,
+			size: session.size,
+			mime_type: session.mime_type,
+			cloud_account_id: account.id,
+			remote_file_id: uploadResponse.remoteFileId,
+			remote_parent_id: uploadResponse.remoteParentId,
+		});
+
+		await syncAccount(userId, account);
+		metadata = getFileByRemoteId(userId, account.id, uploadResponse.remoteFileId) || metadata;
+
+		updateUploadSession(uploadId, { status: 'completed', cloud_account_id: account.id });
+		removeTempFile(uploadId);
+		removeUploadSession(uploadId);
+
+		emitUploadEvent(uploadId, {
+			type: 'upload:complete',
+			uploadId,
+			percent: 100,
+			status: 'completed',
+			file: metadata,
+		});
+
+		return metadata;
+	} catch (error) {
+		updateUploadSession(uploadId, { status: 'failed' });
+		emitUploadEvent(uploadId, {
+			type: 'upload:error',
+			uploadId,
+			status: 'failed',
+			message: error.message,
+		});
+		throw error;
+	}
 }

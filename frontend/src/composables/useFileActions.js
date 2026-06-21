@@ -68,6 +68,7 @@ export function useFileActions({
 		toggleSelection,
 		selectRange,
 		selectItem,
+		selectAll,
 		clearSelection,
 	} = useFileSelection({ sourceList, onBeforeSelect: closeContextMenu });
 
@@ -100,6 +101,14 @@ export function useFileActions({
 
 	function openContextMenu(event, file) {
 		if (!selectedFileIds.value.has(file.id)) replaceSelection(file);
+		
+		// Determine if touch via matchMedia or pointerType
+		const isTouch = (event.pointerType === 'touch') || (event.sourceCapabilities && event.sourceCapabilities.firesTouchEvents) || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+		if (isTouch) {
+			// On mobile, long press enters selection mode. We use the top selection bar for actions.
+			return;
+		}
+
 		return openContextMenuBase(event, file);
 	}
 
@@ -115,7 +124,13 @@ export function useFileActions({
 		await openDetails(file);
 	}
 
-	async function renameSelectedFile({ trackServerOperation } = {}) {
+	function resolveTargetKind(files) {
+		if (files.every((f) => f.is_folder)) return 'folder';
+		if (files.every((f) => !f.is_folder)) return 'file';
+		return 'item';
+	}
+
+	async function renameSelectedFile() {
 		const file = resolveFile();
 		if (!file) return;
 		const nextName = window.prompt(t('drive.newNamePrompt'), file.file_name);
@@ -123,9 +138,16 @@ export function useFileActions({
 		if (!nextName?.trim() || nextName.trim() === file.file_name) return;
 		errorRef.value = '';
 		try {
-			const task = () => (typeof trackServerOperation === 'function'
-				? trackServerOperation(file, nextName.trim())
-				: api.renameFile(file.id, { name: nextName.trim() }));
+			const task = () => uploadQueueStore.trackServerOperation(
+				{
+					type: 'rename',
+					name: nextName.trim(),
+					fromName: file.file_name,
+					toName: nextName.trim(),
+					targetKind: file.is_folder ? 'folder' : 'file',
+				},
+				() => api.renameFile(file.id, { name: nextName.trim() })
+			);
 			await runWithProgress(t('upload.renaming'), task);
 			await refresh();
 		} catch (error) {
@@ -133,7 +155,7 @@ export function useFileActions({
 		}
 	}
 
-	async function deleteSelectedFile({ trackServerOperation } = {}) {
+	async function deleteSelectedFile() {
 		const targets = getActionFiles();
 		if (!targets.length) return;
 
@@ -148,16 +170,25 @@ export function useFileActions({
 		try {
 			const task = () => {
 				if (targets.length === 1) {
-					const target = targets[0];
-					if (typeof trackServerOperation === 'function') {
-						return trackServerOperation(target);
-					}
-					return api.deleteFile(target.id);
+					return uploadQueueStore.trackServerOperation(
+						{
+							type: 'delete',
+							name: targets[0].file_name,
+							targetKind: targets[0].is_folder ? 'folder' : 'file',
+						},
+						() => api.deleteFile(targets[0].id)
+					);
 				}
-				if (typeof trackServerOperation === 'function') {
-					return trackServerOperation(targets);
-				}
-				return api.deleteFiles(targets.map((file) => file.id));
+				const targetKind = resolveTargetKind(targets);
+				return uploadQueueStore.trackServerOperation(
+					{
+						type: 'delete',
+						name: `${targets.length} ${targetKind}`,
+						batchTotal: targets.length,
+						targetKind,
+					},
+					() => api.deleteFiles(targets.map((f) => f.id))
+				);
 			};
 			await runWithProgress(t('upload.deleting'), task);
 			clearSelection();
@@ -214,6 +245,7 @@ export function useFileActions({
 		toggleSelection,
 		selectRange,
 		selectItem,
+		selectAll,
 		clearSelection,
 		getActionFiles,
 		previewFile,

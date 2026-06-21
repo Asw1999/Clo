@@ -251,10 +251,17 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 			const batchId = createBatchId();
 			const batchTotal = entries.length;
 
-			for (const rawEntry of entries) {
+			// Register all files upfront so the UI progress percentage is accurate from 0 to 100%
+			const tasks = entries.map((rawEntry) => {
 				const { file, relativePath } = normalizeUploadEntry(rawEntry);
 				const queueItem = this.registerUpload(file, currentPath, relativePath, { batchId, batchTotal });
+				return { file, relativePath, queueItem };
+			});
+
+			const processTask = async (task) => {
+				const { file, relativePath, queueItem } = task;
 				const targetPath = buildVirtualPath(currentPath, relativePath);
+				const fingerprint = `${file.name}-${file.size}-${file.lastModified}`;
 
 				try {
 					const { data } = await api.initiateUpload({
@@ -262,67 +269,103 @@ export const useUploadQueueStore = defineStore('uploadQueue', {
 						size: file.size,
 						mime_type: file.type || 'application/octet-stream',
 						virtual_path: targetPath,
+						fingerprint,
 					}, { signal: queueItem.abortController.signal });
 
-					const socket = api.createUploadSocket(data.upload_id);
+					const uploadId = data.upload_id;
+					let offset = data.uploaded_bytes || 0;
+
+					if (offset > 0 && file.size > 0) {
+						this.updateUpload(queueItem.id, {
+							progress_percentage: Math.round((offset / file.size) * 100),
+						});
+					}
+
+					const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+					while (offset < file.size) {
+						if (queueItem.abortController.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+						const chunk = file.slice(offset, offset + CHUNK_SIZE);
+						const result = await api.uploadChunk(uploadId, chunk, offset, { signal: queueItem.abortController.signal });
+						offset = result.data.received;
+						this.updateUpload(queueItem.id, {
+							progress_percentage: Math.round((offset / file.size) * 100),
+						});
+					}
+
+					const socket = api.createUploadSocket(uploadId);
 					this.updateUpload(queueItem.id, {
-						status: 'uploading',
+						status: 'uploading', // or 'committing' if we had such status
 						socket,
-						remoteUploadId: data.upload_id,
+						remoteUploadId: uploadId,
 					});
 
-					socket.onmessage = (event) => {
-						if (queueItem.abortController.signal.aborted) return;
+					const uploadCompletePromise = new Promise((resolve, reject) => {
+						socket.onmessage = (event) => {
+							if (queueItem.abortController.signal.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+							const message = JSON.parse(event.data);
+							if (message.type === 'upload:progress') {
+								this.updateUpload(queueItem.id, {
+									progress_percentage: message.percent,
+									status: message.status,
+								});
+							}
+							if (message.type === 'upload:complete') {
+								this.updateUpload(queueItem.id, {
+									progress_percentage: 100,
+									status: 'completed',
+								});
+								resolve();
+							}
+							if (message.type === 'upload:error') {
+								reject(new Error(message.message));
+							}
+						};
+						socket.onerror = () => reject(new Error('WebSocket connection failed'));
+					});
 
-						const message = JSON.parse(event.data);
-						if (message.type === 'upload:progress') {
-							this.updateUpload(queueItem.id, {
-								progress_percentage: message.percent,
-								status: message.status,
-							});
-						}
+					await Promise.all([
+						api.commitUpload(uploadId, { signal: queueItem.abortController.signal }),
+						uploadCompletePromise
+					]);
 
-						if (message.type === 'upload:complete') {
-							this.updateUpload(queueItem.id, {
-								progress_percentage: 100,
-								status: 'completed',
-							});
-							socket.close();
-							onCompleted?.();
-						}
-
-						if (message.type === 'upload:error') {
-							this.updateUpload(queueItem.id, {
-								status: 'failed',
-								error: message.message,
-							});
-							socket.close();
-						}
-					};
-
-					socket.onerror = () => {
-						this.updateUpload(queueItem.id, {
-							status: 'failed',
-							error: 'WebSocket connection failed',
-						});
-					};
-
-					await api.uploadFile(data.upload_id, file, { signal: queueItem.abortController.signal });
+					onCompleted?.();
 				} catch (error) {
 					if (isAbortError(error) || queueItem.abortController.signal.aborted) {
 						this.updateUpload(queueItem.id, {
 							status: 'cancelled',
 							error: null,
 						});
-						continue;
+						return;
 					}
 
 					this.updateUpload(queueItem.id, {
 						status: 'failed',
 						error: error.message,
 					});
+				} finally {
+					const upload = this.uploads.find((u) => u.id === queueItem.id);
+					if (upload?.socket) {
+						upload.socket.close();
+					}
 				}
+			};
+
+			const concurrencyLimit = 4;
+			let index = 0;
+
+			const worker = async () => {
+				while (index < tasks.length) {
+					const task = tasks[index++];
+					await processTask(task);
+				}
+			};
+
+			const workers = [];
+			for (let i = 0; i < concurrencyLimit; i++) {
+				workers.push(worker());
 			}
+
+			await Promise.all(workers);
 		},
 	},
 });

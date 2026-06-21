@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n';
 import { providerLabel } from './useFormatFile.js';
 import { useFileFiltersUi } from './useFileFiltersUi.js';
 import { useFileActions } from './useFileActions.js';
-import { useFileActionProgress } from './useFileActionProgress.js';
+
 import { getFileCategory } from './useFileType.js';
 import { matchesUpdatedFilter } from './useFileFilters.js';
 
@@ -11,7 +11,7 @@ export function useFileListView({
 	loadFiles,
 	sourceFiles,
 	uploadQueueStore,
-	actions = {},
+
 	getPreviewType,
 	previewUnsupportedMessage,
 	autoRefresh = true,
@@ -41,7 +41,19 @@ export function useFileListView({
 	const sortBy = ref(initialSortBy);
 	const sortDirection = ref(initialSortDirection);
 
-	const actionProgress = useFileActionProgress();
+	const actionInProgress = ref(false);
+	const actionLabel = ref('');
+
+	async function runWithProgress(label, task) {
+		actionInProgress.value = true;
+		actionLabel.value = label;
+		try {
+			return await task();
+		} finally {
+			actionInProgress.value = false;
+			actionLabel.value = '';
+		}
+	}
 
 	const typeOptions = computed(() => [
 		{ value: 'all', label: t('filters.allTypes') },
@@ -187,32 +199,26 @@ export function useFileListView({
 		refresh,
 		getPreviewType,
 		previewUnsupportedMessage,
-		onProgress: actionProgress.runWithProgress,
+		onProgress: runWithProgress,
 	});
 
-	const originalRename = actionsApi.renameSelectedFile;
-	const originalDelete = actionsApi.deleteSelectedFile;
+	const { renameSelectedFile, deleteSelectedFile } = actionsApi;
 
-	async function renameSelectedFile() {
-		await originalRename({
-			trackServerOperation: actions.rename
-				? (file, nextName) => actions.rename(file, nextName)
-				: undefined,
-		});
-	}
-
-	async function deleteSelectedFile() {
-		await originalDelete({
-			trackServerOperation: actions.delete
-				? (target) => actions.delete(target)
-				: undefined,
-		});
-	}
-
-	function handleGlobalPointer() {
+	function handleGlobalClick(event) {
 		if (actionsApi.contextMenu.value.visible) actionsApi.closeContextMenu();
 		activeFilterMenu.value = null;
-		actionsApi.clearSelection();
+
+		const isTouch = event.pointerType === 'touch' || (event.sourceCapabilities && event.sourceCapabilities.firesTouchEvents) || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+		
+		// Only clear selection on click if it's not a touch device. On mobile, users must use the 'X' button to clear.
+		if (!isTouch) {
+			actionsApi.clearSelection();
+		}
+	}
+
+	function handleGlobalScroll() {
+		if (actionsApi.contextMenu.value.visible) actionsApi.closeContextMenu();
+		activeFilterMenu.value = null;
 	}
 
 	let refreshTimer = null;
@@ -222,14 +228,14 @@ export function useFileListView({
 		if (autoRefresh && !sourceFiles) {
 			refreshTimer = window.setInterval(refresh, refreshIntervalMs);
 		}
-		window.addEventListener('click', handleGlobalPointer);
-		window.addEventListener('scroll', handleGlobalPointer, true);
+		window.addEventListener('click', handleGlobalClick);
+		window.addEventListener('scroll', handleGlobalScroll, true);
 	});
 
 	onBeforeUnmount(() => {
 		if (refreshTimer) window.clearInterval(refreshTimer);
-		window.removeEventListener('click', handleGlobalPointer);
-		window.removeEventListener('scroll', handleGlobalPointer, true);
+		window.removeEventListener('click', handleGlobalClick);
+		window.removeEventListener('scroll', handleGlobalScroll, true);
 	});
 
 	watch(sourceFiles || files, (next) => {
@@ -262,11 +268,11 @@ export function useFileListView({
 		sortedFiles,
 		refresh,
 		toggleViewMode,
-		handleGlobalPointer,
 		...actionsApi,
+		selectAll: actionsApi.selectAll,
 		renameSelectedFile,
 		deleteSelectedFile,
-		actionInProgress: actionProgress.isActionInProgress,
-		actionLabel: actionProgress.actionLabel,
+		actionInProgress,
+		actionLabel,
 	};
 }

@@ -37,8 +37,8 @@ export function providerIcon(provider) {
 	return getProviderMeta(provider).icon;
 }
 
-export function formatBytes(value) {
-	if (!value) return '—';
+export function formatBytes(value, strict = false) {
+	if (!value && !strict) return '—';
 	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
 	let amount = toNumber(value);
 	let index = 0;
@@ -50,14 +50,7 @@ export function formatBytes(value) {
 }
 
 export function formatBytesStrict(value) {
-	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-	let amount = toNumber(value);
-	let index = 0;
-	while (amount >= 1024 && index < units.length - 1) {
-		amount /= 1024;
-		index += 1;
-	}
-	return `${amount.toFixed(amount >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+	return formatBytes(value, true);
 }
 
 export function formatDate(value, locale = 'id-ID') {

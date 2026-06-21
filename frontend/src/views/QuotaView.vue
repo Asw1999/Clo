@@ -18,7 +18,6 @@ import {
 	IconChartPie,
 	IconAdjustments,
 } from '@tabler/icons-vue';
-import DriveShell from '../components/DriveShell.vue';
 import MegaConnectModal from '../components/MegaConnectModal.vue';
 import PCloudConnectModal from '../components/PCloudConnectModal.vue';
 import S3ConnectModal from '../components/S3ConnectModal.vue';
@@ -541,8 +540,7 @@ onMounted(async () => {
 </script>
 
 <template>
-	<DriveShell current-section="storage">
-		<div class="min-h-[calc(100vh-84px)] rounded-[24px] bg-white px-4 py-[18px] pb-6 text-[#202124] dark:bg-slate-800 dark:text-slate-100 sm:px-6">
+<div class="min-h-[calc(100vh-84px)] rounded-[24px] bg-white px-4 py-[18px] pb-6 text-[#202124] dark:bg-slate-800 dark:text-slate-100 sm:px-6">
 			<div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 				<div>
 					<h1 class="text-2xl font-normal">{{ t('storage.title') }}</h1>
@@ -562,7 +560,7 @@ onMounted(async () => {
 							<IconChevronDown :size="16" :stroke="2" class="transition" :class="isConnectMenuOpen ? 'rotate-180' : ''" />
 						</button>
 
-						<div v-if="isConnectMenuOpen" class="absolute right-0 top-[calc(100%+10px)] z-20 min-w-[240px] overflow-hidden rounded-[20px] border border-[#e0e3e7] bg-white py-2 shadow-[0_18px_44px_rgba(32,33,36,0.18)] dark:border-slate-700 dark:bg-slate-900">
+						<div v-if="isConnectMenuOpen" class="absolute left-0 sm:left-auto sm:right-0 top-[calc(100%+8px)] z-20 w-56 min-w-[240px] overflow-hidden rounded-[20px] border border-[#e0e3e7] bg-white py-2 shadow-[0_18px_44px_rgba(32,33,36,0.18)] dark:border-slate-700 dark:bg-slate-900">
 							<button v-for="provider in providerConnectOptions" :key="provider.key" type="button" class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] disabled:opacity-60 dark:text-slate-100 dark:hover:bg-slate-800" :disabled="Boolean(connectingProvider)" @click="provider.action">
 								<img :src="provider.icon" :alt="provider.label" class="size-[18px] shrink-0 object-contain" />
 								<span>{{ connectingProvider === provider.key ? provider.busyLabel : provider.label }}</span>
@@ -739,5 +737,4 @@ onMounted(async () => {
 			<PCloudConnectModal v-if="isPCloudModalOpen" :is-connecting="connectingProvider === 'pcloud'" :error="actionError" @close="closePCloudModal" @connect="connectPCloud" />
 			<S3ConnectModal v-if="isS3ModalOpen" :is-connecting="connectingProvider === 's3'" :error="actionError" @close="closeS3Modal" @connect="connectS3" />
 		</div>
-	</DriveShell>
 </template>

@@ -13,6 +13,7 @@ import HelpModal from './HelpModal.vue';
 import ProfileModal from './ProfileModal.vue';
 import LanguageModal from './LanguageModal.vue';
 import UpdatesModal from './UpdatesModal.vue';
+import MobileNavbar from './MobileNavbar.vue';
 import { api } from '../services/api';
 import { useFileTreeStore } from '../stores/fileTree';
 import { getFileIcon } from '../composables/useFileType.js';
@@ -172,6 +173,23 @@ function openUpdatesModal() {
 
 function closeUpdatesModal() {
 	isUpdatesModalOpen.value = false;
+}
+
+
+function onFilesSelected(event) {
+	isCreateMenuOpen.value = false;
+	isMobileNavOpen.value = false;
+	const files = Array.from(event.target.files || []);
+	if (files.length) emit('upload-files', files);
+	event.target.value = '';
+}
+
+function onFolderSelected(event) {
+	isCreateMenuOpen.value = false;
+	isMobileNavOpen.value = false;
+	const files = Array.from(event.target.files || []);
+	if (files.length) emit('upload-folder', files);
+	event.target.value = '';
 }
 
 function runCreateAction(action) {
@@ -385,14 +403,16 @@ const profileLinks = [
 								<span>{{ t('sidebar.newFolder') }}</span>
 								<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
 							</button>
-							<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runCreateAction('upload-files')">
+							<label class="flex w-full cursor-pointer items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70">
 								<span>{{ t('sidebar.uploadFile') }}</span>
 								<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
-							</button>
-							<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runCreateAction('upload-folder')">
+								<input type="file" multiple class="absolute -z-50 h-px w-px opacity-0 overflow-hidden" @change="onFilesSelected" />
+							</label>
+							<label class="flex w-full cursor-pointer items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70">
 								<span>{{ t('sidebar.uploadFolder') }}</span>
 								<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
-							</button>
+								<input type="file" multiple webkitdirectory directory class="absolute -z-50 h-px w-px opacity-0 overflow-hidden" @change="onFolderSelected" />
+							</label>
 						</div>
 					</div>
 
@@ -437,14 +457,16 @@ const profileLinks = [
 							<span>{{ t('sidebar.newFolder') }}</span>
 							<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
 						</button>
-						<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runCreateAction('upload-files')">
-							<span>{{ t('sidebar.uploadFile') }}</span>
-							<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
-						</button>
-						<button type="button" class="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70" @click="runCreateAction('upload-folder')">
-							<span>{{ t('sidebar.uploadFolder') }}</span>
-							<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
-						</button>
+						<label class="flex w-full cursor-pointer items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70">
+								<span>{{ t('sidebar.uploadFile') }}</span>
+								<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
+								<input type="file" multiple class="absolute -z-50 h-px w-px opacity-0 overflow-hidden" @change="onFilesSelected" />
+							</label>
+						<label class="flex w-full cursor-pointer items-center justify-between px-4 py-3 text-left text-sm text-[#202124] hover:bg-[#f8fafd] dark:text-slate-100 dark:hover:bg-slate-700/70">
+								<span>{{ t('sidebar.uploadFolder') }}</span>
+								<IconChevronRight :size="16" :stroke="2" class="text-[#5f6368] dark:text-slate-400" />
+								<input type="file" multiple webkitdirectory directory class="absolute -z-50 h-px w-px opacity-0 overflow-hidden" @change="onFolderSelected" />
+							</label>
 					</div>
 				</div>
 
@@ -475,9 +497,10 @@ const profileLinks = [
 
 			</aside>
 
-			<main class="px-2 pb-4 lg:px-0 lg:pr-4 lg:pb-5">
+			<main class="px-2 pb-24 lg:px-0 lg:pr-4 lg:pb-5">
 				<slot />
 			</main>
 		</div>
+		<MobileNavbar :current-section="props.currentSection" @upload-files="(f) => emit('upload-files', f)" @upload-folder="(f) => emit('upload-folder', f)" @new-folder="emit('new-folder')" />
 	</div>
 </template>

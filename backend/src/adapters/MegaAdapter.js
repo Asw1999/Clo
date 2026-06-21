@@ -3,6 +3,7 @@ import { BaseCloudAdapter } from './BaseCloudAdapter.js';
 import { guessMimeType } from '../utils/mime.js';
 import { decryptJson } from '../utils/crypto.js';
 import { updateAccountCredentials } from '../services/accountService.js';
+import { withPathLock } from '../utils/pathMutex.js';
 
 function isMegaSessionError(error) {
 	return /invalid or expired user session|ESID|utype/i.test(error?.message || '');
@@ -147,22 +148,24 @@ export class MegaAdapter extends BaseCloudAdapter {
 	}
 
 	async ensureRemotePath(virtualPath = '/') {
-		const storage = await this.getStorage();
-		const normalizedPath = normalizePath(virtualPath);
-		if (normalizedPath === '/') return storage.root;
+		return withPathLock(this.account.id, virtualPath, async () => {
+			const storage = await this.getStorage();
+			const normalizedPath = normalizePath(virtualPath);
+			if (normalizedPath === '/') return storage.root;
 
-		const segments = normalizedPath.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
-		let current = storage.root;
+			const segments = normalizedPath.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+			let current = storage.root;
 
-		for (const segment of segments) {
-			let next = findChildFolder(current, segment);
-			if (!next) {
-				next = await current.mkdir(segment);
+			for (const segment of segments) {
+				let next = findChildFolder(current, segment);
+				if (!next) {
+					next = await current.mkdir(segment);
+				}
+				current = next;
 			}
-			current = next;
-		}
 
-		return current;
+			return current;
+		});
 	}
 
 	async findByRecord(fileRecord) {

@@ -3,6 +3,7 @@ import { BaseCloudAdapter } from './BaseCloudAdapter.js';
 import { decryptJson } from '../utils/crypto.js';
 import { pcloudGet, pcloudLogin } from '../utils/pcloudClient.js';
 import { updateAccountCredentials } from '../services/accountService.js';
+import { withPathLock } from '../utils/pathMutex.js';
 
 function normalizeVirtualPath(input = '/') {
 	if (!input || input === '/') return '/';
@@ -144,12 +145,14 @@ export class PCloudAdapter extends BaseCloudAdapter {
 	}
 
 	async ensureFolder(virtualPath = '/') {
-		const normalized = normalizeVirtualPath(virtualPath);
-		if (normalized === '/') return 0;
+		return withPathLock(this.account.id, virtualPath, async () => {
+			const normalized = normalizeVirtualPath(virtualPath);
+			if (normalized === '/') return 0;
 
-		const path = normalized.replace(/\/+$/, '');
-		const payload = await this.call('createfolderifnotexists', { path });
-		return payload.metadata?.folderid ?? 0;
+			const path = normalized.replace(/\/+$/, '');
+			const payload = await this.call('createfolderifnotexists', { path });
+			return payload.metadata?.folderid ?? 0;
+		});
 	}
 
 	async uploadStream({ stream, size, fileName, mimeType, virtualPath = '/', onProgress }) {

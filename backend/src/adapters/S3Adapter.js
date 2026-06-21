@@ -12,6 +12,7 @@ import { Upload } from '@aws-sdk/lib-storage';
 import { BaseCloudAdapter } from './BaseCloudAdapter.js';
 import { guessMimeType } from '../utils/mime.js';
 import { decryptJson } from '../utils/crypto.js';
+import { withPathLock } from '../utils/pathMutex.js';
 
 const FOLDER_MARKER = '/';
 

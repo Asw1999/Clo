@@ -1,5 +1,5 @@
 <script setup>
-import { IconX, IconEye, IconStar, IconStarFilled, IconDownload, IconEdit, IconInfoCircle, IconTrash } from '@tabler/icons-vue';
+import { IconX, IconChecks, IconEye, IconStar, IconStarFilled, IconDownload, IconEdit, IconInfoCircle, IconTrash } from '@tabler/icons-vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
@@ -18,6 +18,7 @@ const props = defineProps({
 
 const emit = defineEmits([
 	'clear',
+	'select-all',
 	'preview',
 	'toggle-star',
 	'download',
@@ -32,7 +33,10 @@ const emit = defineEmits([
 		<button type="button" class="inline-flex size-9 items-center justify-center rounded-full transition hover:bg-[#d2e3fc] dark:hover:bg-sky-500/20" :title="t('drive.deselectAll')" @click="emit('clear')">
 			<IconX :size="18" :stroke="2" />
 		</button>
-		<span class="pr-2 text-sm font-semibold">{{ selectedCount }} {{ t('drive.selected') }}</span>
+		<span class="px-2 text-sm font-semibold">{{ selectedCount }} {{ t('drive.selected') }}</span>
+		<button type="button" class="mr-1 inline-flex size-9 items-center justify-center rounded-full transition hover:bg-[#d2e3fc] dark:hover:bg-sky-500/20" :title="t('drive.selectAll', 'Pilih semua')" @click="emit('select-all')">
+			<IconChecks :size="18" :stroke="2" />
+		</button>
 
 		<slot name="prefix" :primary="primaryFile" />
 
